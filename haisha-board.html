@@ -331,9 +331,9 @@ function sitesOnDay(date){const a=dayAssign(date),m=sById();return Object.keys(a
 function missPeopleOn(date){const {cp}=usageOn(date);return PEOPLE.filter(p=>(st.co==='all'||p.co===st.co)&&!(cp[p.id]>0)&&!getStatus(date,p.id));}
 function peopleLabel(a){const self=a.people.length;const byCo={};(a.gaichu||[]).forEach(g=>byCo[g.company]=(byCo[g.company]||0)+1);
   const parts=[self,...Object.values(byCo)];return parts.join('+');}
-function cellTip(a){let t='配員: '+(a.people.map(id=>pById[id].name).join('、')||'なし');
+function cellTip(a){let t='配員: '+(a.people.map(id=>(pById[id]||{name:id}).name).join('、')||'なし');
   if(a.gaichu&&a.gaichu.length)t+=' / 外注: '+a.gaichu.map(g=>g.company+(g.name?' '+g.name:'')).join('、');
-  t+='\n車両: '+(a.vehicles.map(id=>vById[id].name).join('、')||'なし');
+  t+='\n車両: '+(a.vehicles.map(id=>(vById[id]||{name:id}).name).join('、')||'なし');
   const un=(a.unpan||[]).length,ka=(a.kaiso||[]).length;if(un||ka)t+='\n運搬'+un+'件 / 回送'+ka+'件';return t;}
 
 // =============== render ===============
@@ -390,11 +390,11 @@ function cardEl(o,cp,cv){
     <div class="tantou-row"><div class="row-label">⭐ 担当（現場マスタ）</div><div class="chips">
       ${s.tantou.length?s.tantou.map(id=>`<span class="chip tantou">${esc((pById[id]||{name:id}).name)}</span>`).join(''):'<span style="color:var(--faint);font-size:13px">—</span>'}</div></div>
     <div class="row"><div class="row-label">👷 配員（自社） <span style="color:var(--faint)">(${a.people.length})</span></div><div class="chips">
-      ${a.people.map(id=>chip('person',id,pById[id].name,cp[id]>1,s.id)).join('')}<button class="add" data-add="person" data-sid="${s.id}">＋ 追加</button></div></div>
+      ${a.people.map(id=>chip('person',id,(pById[id]||{name:id}).name,cp[id]>1,s.id)).join('')}<button class="add" data-add="person" data-sid="${s.id}">＋ 追加</button></div></div>
     <div class="row"><div class="row-label">🤝 外注 <span style="color:var(--faint)">(${(a.gaichu||[]).length})</span></div><div class="chips">
       ${(a.gaichu||[]).map((g,i)=>`<span class="chip gaichu">${esc(g.company)}${g.name?' '+esc(g.name):''}<span class="x" data-rmg="${i}" data-sid="${s.id}">×</span></span>`).join('')}<button class="add" data-gai="${s.id}">＋ 外注</button></div></div>
     <div class="row"><div class="row-label">🚚 車両 <span style="color:var(--faint)">(${a.vehicles.length})</span></div><div class="chips">
-      ${a.vehicles.map(id=>chip('vehicle',id,vById[id].name+'（'+vById[id].kind+'）',cv[id]>1,s.id)).join('')}<button class="add" data-add="vehicle" data-sid="${s.id}">＋ 追加</button></div></div>
+      ${a.vehicles.map(id=>chip('vehicle',id,(vById[id]?vById[id].name+'（'+vById[id].kind+'）':id),cv[id]>1,s.id)).join('')}<button class="add" data-add="vehicle" data-sid="${s.id}">＋ 追加</button></div></div>
     ${transHtml('unpan','運搬','🚛',a,s.id)}${transHtml('kaiso','回送','🏗',a,s.id)}`;
   el.addEventListener('dragover',e=>{e.preventDefault();el.classList.add('drop-ok');});
   el.addEventListener('dragleave',()=>el.classList.remove('drop-ok'));
