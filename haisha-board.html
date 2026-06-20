@@ -363,8 +363,8 @@ function renderDay(){
   const dupP=Object.keys(cp).filter(id=>cp[id]>1),dupV=Object.keys(cv).filter(id=>cv[id]>1);
   const banner=document.getElementById('banner');
   if(dupP.length||dupV.length){const parts=[];
-    if(dupP.length)parts.push(dupP.map(id=>pById[id].name).join('・')+'（人員）');
-    if(dupV.length)parts.push(dupV.map(id=>vById[id].name).join('・')+'（車両）');
+    if(dupP.length)parts.push(dupP.map(id=>(pById[id]||{name:id}).name).join('・')+'（人員）');
+    if(dupV.length)parts.push(dupV.map(id=>(vById[id]||{name:id}).name).join('・')+'（車両）');
     banner.innerHTML='⚠ <b>ダブルブッキング：</b>'+parts.join(' / ')+' が同じ日に複数の現場へ。';banner.classList.add('show');
   }else banner.classList.remove('show');
   const host=document.getElementById('content');host.innerHTML='';
@@ -449,7 +449,7 @@ function renderGrid(){
     const sites=SITES.filter(s=>st.co==='all'||s.co===st.co);
     if(!sites.length)body=`<tr><td class="rowlab">—</td><td colspan="${n}" class="empty">現場なし</td></tr>`;
     sites.forEach(s=>{
-      body+=`<tr><td class="rowlab"><div class="rl-name">${esc(s.name)}</div><div class="rl-sub">${COMPANIES[s.co].name} ・ 担当 ${s.tantou.map(id=>pById[id].name).join('、')||'—'}</div></td>`;
+      body+=`<tr><td class="rowlab"><div class="rl-name">${esc(s.name)}</div><div class="rl-sub">${COMPANIES[s.co].name} ・ 担当 ${s.tantou.map(id=>(pById[id]||{name:id}).name).join('、')||'—'}</div></td>`;
       dates.forEach(d=>{const ds=ymd(d);const a=dayAssign(ds)[s.id];const wd=d.getDay();const wknd=(wd===0||wd===6)?' wknd':'';
         if(!a){body+=detail==='bar'?`<td class="gcell qadd${wknd}" data-qadd="${s.id}|${ds}" title="クリックで作業内容を入力"></td>`:`<td class="${wknd}"></td>`;return;}
         if(detail==='bar'){const txt=(a.content||'').trim();body+=`<td class="gcell active${wknd}" data-drill="${ds}" title="${esc(a.content||'')}"><div class="gbar ${s.co}">${esc(txt?trunc(txt,8):'—')}</div></td>`;return;}
