@@ -255,6 +255,7 @@
    GAS+Sheets移行: loadSites/loadAssignments/saveAssignment/copyAssignments + 権限はGoogleログイン後にGASで照合。 */
 const COMPANIES={nexus:{name:'ネクサス',cls:'nexus'},forest:{name:'フォレスト総建',cls:'forest'},igarin:{name:'伊賀林業',cls:'igarin'}};
 const CO_ORDER=['nexus','forest','igarin'];
+function normCo(c){c=String(c==null?'':c).trim().toLowerCase();if(COMPANIES[c])return c;const alias={'ネクサス':'nexus','nexus':'nexus','フォレスト':'forest','フォレスト総建':'forest','forest':'forest','伊賀林業':'igarin','igarin':'igarin','iga':'igarin'};return alias[c]||'nexus';}
 const CONFIG={GAS_URL:'https://script.google.com/macros/s/AKfycbzblWrGas_CcxS6mZBEvVI2Ur9LEIge9_ihC5okv4ZUBFfLcjnE_FPg8qWG19qyZvZu/exec'};
 let PEOPLE=[],VEHICLES=[],SITES=[],GAICHU_COMPANIES=[],INPUT_USERS=[],actuals=[];
 const board={}, pstatus={};
@@ -279,9 +280,9 @@ async function apiPost(payload){const r=await fetch(CONFIG.GAS_URL,{method:'POST
 async function loadMasters(){
   let r;try{r=await api({action:'masters'});}catch(e){flash('通信エラー');return false;}
   if(!r||!r.ok){flash('マスタ読込失敗');return false;}
-  PEOPLE=(r.staff||[]).map(s=>({id:s.code,name:s.name,co:s.company||'nexus'}));
-  VEHICLES=(r.kizai||[]).map(k=>({id:k.code,name:k.name,kind:k.kubun||'',co:k.company||'nexus'}));
-  SITES=(r.sites||[]).map(s=>({id:s.code,name:s.name,co:s.company||'nexus',tantou:s.tantou||[],status:s.status||''}));
+  PEOPLE=(r.staff||[]).map(s=>({id:s.code,name:s.name,co:normCo(s.company)}));
+  VEHICLES=(r.kizai||[]).map(k=>({id:k.code,name:k.name,kind:k.kubun||'',co:normCo(k.company)}));
+  SITES=(r.sites||[]).map(s=>({id:s.code,name:s.name,co:normCo(s.company),tantou:s.tantou||[],status:s.status||''}));
   GAICHU_COMPANIES=r.gaichu||[];
   INPUT_USERS=(r.staff||[]).map(s=>s.name);if(!INPUT_USERS.length)INPUT_USERS=['—'];
   rebuildMaps();return true;
