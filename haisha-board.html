@@ -58,6 +58,16 @@
   .wrap{display:grid;grid-template-columns:1fr 340px;gap:18px;max-width:1280px;margin:0 auto;padding:16px;align-items:start;}
   @media(max-width:880px){.wrap{grid-template-columns:1fr;}}
   .wrap>main,.wrap>aside{min-width:0;}
+  .auth-bg{position:fixed;inset:0;z-index:200;background:var(--bg);display:none;align-items:center;justify-content:center;padding:24px;padding-top:max(24px,env(safe-area-inset-top));}
+  .auth-bg.show{display:flex;}
+  .auth-card{width:100%;max-width:360px;background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:30px 22px;text-align:center;}
+  .auth-logo{font-size:40px;margin-bottom:6px;}
+  .auth-title{font-size:20px;font-weight:700;}
+  .auth-sub{color:var(--muted);font-size:13px;margin-top:8px;line-height:1.6;}
+  .auth-msg{color:#ff9d9d;font-size:13px;margin-top:10px;min-height:18px;}
+  .auth-input{width:100%;margin-top:12px;background:var(--surface2);border:1px solid var(--line);color:var(--text);border-radius:10px;padding:12px;font-size:15px;}
+  .line-btn{width:100%;margin-top:16px;background:#06C755;color:#fff;border:none;border-radius:10px;padding:14px;font-size:16px;font-weight:700;cursor:pointer;}
+  .line-btn:active{opacity:.85;}
   .wrap.grid-mode{grid-template-columns:1fr;max-width:1600px;} .wrap.grid-mode aside{display:none;}
 
   .backbar{background:var(--surface2);border:1px solid var(--line);color:var(--accent);border-radius:8px;padding:8px 14px;font-size:13px;cursor:pointer;margin-bottom:14px;}
@@ -187,6 +197,7 @@
 </style>
 </head>
 <body>
+<div id="authBg" class="auth-bg"><div class="auth-card"></div></div>
 <header>
   <div class="bar">
     <div class="brand">配員・配車ボード <small>ECPGROUP</small></div>
@@ -294,6 +305,8 @@ function siteMetaInline(s){const p=[];
   if(s.note)p.push('📝'+esc(trunc(s.note,12)));
   return p.join('　');}
 const CONFIG={GAS_URL:'https://script.google.com/macros/s/AKfycbzblWrGas_CcxS6mZBEvVI2Ur9LEIge9_ihC5okv4ZUBFfLcjnE_FPg8qWG19qyZvZu/exec'};
+const LINE_CHANNEL_ID='2010462402';
+const AUTH={token:localStorage.getItem('haisha_session')||'',name:localStorage.getItem('haisha_name')||''};
 let PEOPLE=[],VEHICLES=[],SITES=[],GAICHU_COMPANIES=[],INPUT_USERS=[],actuals=[];
 const board={}, pstatus={};
 
@@ -312,10 +325,12 @@ function rebuildMaps(){pById=Object.fromEntries(PEOPLE.map(p=>[p.id,p]));vById=O
   document.getElementById('inputUser').innerHTML=INPUT_USERS.map(u=>`<option>${esc(u)}</option>`).join('');}
 function currentUser(){return document.getElementById('inputUser').value||'';}
 function flash(m){const el=document.getElementById('flash');if(el)el.textContent=m||'';}
-async function api(params){const r=await fetch(CONFIG.GAS_URL+'?'+new URLSearchParams(params));return r.json();}
-async function apiPost(payload){const r=await fetch(CONFIG.GAS_URL,{method:'POST',body:JSON.stringify(payload)});return r.json();}
+async function api(params){params.token=AUTH.token;const r=await fetch(CONFIG.GAS_URL+'?'+new URLSearchParams(params));return r.json();}
+async function apiPost(payload){if(payload.token===undefined)payload.token=AUTH.token;const r=await fetch(CONFIG.GAS_URL,{method:'POST',body:JSON.stringify(payload)});return r.json();}
+function authFail(r){if(r&&r.status==='unauth'){AUTH.token='';localStorage.removeItem('haisha_session');showLogin();return true;}return false;}
 async function loadMasters(){
   let r;try{r=await api({action:'masters'});}catch(e){flash('通信エラー');return false;}
+  if(authFail(r))return false;
   if(!r||!r.ok){flash('マスタ読込失敗');return false;}
   PEOPLE=(r.staff||[]).map(s=>({id:s.code,name:s.name,co:normCo(s.company)}));
   VEHICLES=(r.kizai||[]).map(k=>({id:k.code,name:k.name,kind:k.kubun||'',co:normCo(k.company)}));
@@ -331,6 +346,7 @@ function visibleRange(){
 }
 async function loadPlan(start,end){
   let r;try{r=await api({action:'plan',start,end});}catch(e){flash('通信エラー');return;}
+  if(authFail(r))return;
   if(!r||!r.ok){flash('予定読込失敗');return;}
   for(let d=new Date(start);d<=new Date(end);d=addDays(d,1)){const ds=ymd(d);delete board[ds];delete pstatus[ds];}
   const ensure=(ds,sid)=>{board[ds]=board[ds]||{};board[ds][sid]=board[ds][sid]||{people:[],vehicles:[],gaichu:[],content:'',unpan:[],kaiso:[]};return board[ds][sid];};
@@ -356,11 +372,62 @@ async function saveDay(date){
   const statuses=Object.keys(stat).filter(p=>stat[p]).map(p=>({staffCode:p,status:stat[p]}));
   flash('保存中…');
   let r;try{r=await apiPost({action:'savePlan',date:date,user:currentUser(),siteDays:siteDays,assign:assign,trans:trans,status:statuses});}catch(e){flash('保存失敗(通信)');return;}
+  if(authFail(r))return;
   flash(r&&r.ok?'保存しました':'保存失敗');
 }
 function commitDay(date){saveDay(date);render();}
 async function go(){const rg=visibleRange();flash('読み込み中…');await loadPlan(rg.start,rg.end);render();flash('');}
-async function init(){flash('読み込み中…');const ok=await loadMasters();if(!ok){render();return;}await go();}
+async function init(){
+  const qs=new URLSearchParams(location.search);
+  if(qs.get('code')){
+    flash('ログイン処理中…');
+    let r;try{r=await apiPost({action:'lineLogin',code:qs.get('code'),redirectUri:redirectUri(),token:''});}catch(e){r=null;}
+    history.replaceState({},'',location.pathname);
+    if(r&&r.ok){setSession(r);}
+    else if(r&&r.status==='unlinked'){showLink(r.userId,r.name,r.candidates||[]);return;}
+    else if(r&&r.status==='denied'){showDenied();return;}
+    else{showLogin('ログインに失敗しました。もう一度お試しください。');return;}
+  }
+  flash('読み込み中…');
+  const ok=await loadMasters();
+  if(!ok)return;          // 未認証ならshowLoginが出ている
+  hideLogin();await go();
+}
+function redirectUri(){return location.origin+location.pathname;}
+function setSession(r){AUTH.token=r.token;AUTH.name=r.name||'';localStorage.setItem('haisha_session',AUTH.token);localStorage.setItem('haisha_name',AUTH.name);}
+function lineLoginUrl(){const state=Math.random().toString(36).slice(2);
+  const p=new URLSearchParams({response_type:'code',client_id:LINE_CHANNEL_ID,redirect_uri:redirectUri(),state:state,scope:'openid profile'});
+  return 'https://access.line.me/oauth2/v2.1/authorize?'+p.toString();}
+function authCard(){return document.getElementById('authBg').querySelector('.auth-card');}
+function showLogin(msg){authCard().innerHTML=
+  `<div class="auth-logo">🚚</div><div class="auth-title">配員・配車ボード</div><div class="auth-sub">ECPGROUP 社内用</div>
+   ${msg?`<div class="auth-msg">${esc(msg)}</div>`:''}
+   <button class="line-btn" id="lineGo">LINEでログイン</button>`;
+  document.getElementById('lineGo').onclick=()=>{location.href=lineLoginUrl();};
+  document.getElementById('authBg').classList.add('show');}
+function showLink(userId,name,cands){authCard().innerHTML=
+  `<div class="auth-title">初回登録</div><div class="auth-sub">${esc(name||'')} さん、自分の名前を選んでください</div>
+   <select id="linkStaff" class="auth-input"><option value="">— 名前を選択 —</option>${cands.map(c=>`<option value="${c.code}">${esc(c.name)}（${COMPANIES[normCo(c.company)]?COMPANIES[normCo(c.company)].name:esc(c.company)}）</option>`).join('')}</select>
+   <input id="linkCode" class="auth-input" placeholder="初回コード（合言葉）" autocomplete="off">
+   <div class="auth-msg" id="linkMsg"></div>
+   <button class="line-btn" id="linkGo">登録してログイン</button>`;
+  document.getElementById('authBg').classList.add('show');
+  document.getElementById('linkGo').onclick=async()=>{
+    const staffCode=document.getElementById('linkStaff').value,linkCode=document.getElementById('linkCode').value.trim();
+    if(!staffCode){document.getElementById('linkMsg').textContent='名前を選んでください';return;}
+    let r;try{r=await apiPost({action:'lineLink',userId:userId,staffCode:staffCode,linkCode:linkCode,lineName:name,token:''});}catch(e){r=null;}
+    if(r&&r.ok){setSession(r);hideLogin();flash('読み込み中…');const ok=await loadMasters();if(ok)await go();}
+    else if(r&&r.status==='badcode')document.getElementById('linkMsg').textContent='初回コードが違います';
+    else if(r&&r.status==='denied')document.getElementById('linkMsg').textContent='この社員は無効です';
+    else document.getElementById('linkMsg').textContent='登録に失敗しました';
+  };}
+function showDenied(){authCard().innerHTML=
+  `<div class="auth-title">アクセス権がありません</div><div class="auth-sub">この配車ボードはECPGROUPの在籍社員専用です。担当者にご連絡ください。</div>
+   <button class="line-btn" id="lineGo2">別のLINEでログイン</button>`;
+  document.getElementById('lineGo2').onclick=()=>{location.href=lineLoginUrl();};
+  document.getElementById('authBg').classList.add('show');}
+function hideLogin(){document.getElementById('authBg').classList.remove('show');}
+async function doLogout(){try{await apiPost({action:'logout',token:AUTH.token});}catch(e){}AUTH.token='';localStorage.removeItem('haisha_session');localStorage.removeItem('haisha_name');location.reload();}
 
 function dayAssign(date){return board[date]||{};}
 function getStatus(date,pid){return (pstatus[date]||{})[pid]||'';}
