@@ -93,6 +93,7 @@
   .gtable .rowlab{position:sticky;left:0;background:var(--surface);text-align:left;z-index:1;min-width:160px;max-width:220px;}
   .gtable thead .corner{position:sticky;left:0;z-index:3;background:var(--surface2);text-align:left;}
   .rowlab .rl-name{font-weight:600;color:var(--text);} .rowlab .rl-sub{font-size:10.5px;color:var(--muted);margin-top:1px;}
+  .rowlab .rl-sub2{font-size:10px;color:var(--faint);margin-top:1px;line-height:1.45;white-space:normal;}
   .gtable td.wknd{background:var(--weekend);}
   .gcell.active{cursor:pointer;} .gcell.active:hover{background:rgba(77,141,255,.1);}
   .gcell .ct{font-weight:600;} .gcell .sub{font-size:10px;color:var(--muted);}
@@ -264,6 +265,11 @@ function siteMetaHtml(s){const p=[];
   if(s.qty!==''&&s.qty!=null)p.push('📐 '+esc(s.qty)+(s.unit?' '+esc(s.unit):''));
   if(s.note)p.push('📝 '+esc(s.note));
   return p.length?`<div class="site-meta">${p.join('<span class="meta-dot">・</span>')}</div>`:'';}
+function siteMetaInline(s){const p=[];
+  if(s.client)p.push('🏢'+esc(s.client)+(s.clientContact?'（'+esc(s.clientContact)+'）':''));
+  if(s.qty!==''&&s.qty!=null)p.push('📐'+esc(s.qty)+esc(s.unit||''));
+  if(s.note)p.push('📝'+esc(trunc(s.note,12)));
+  return p.join('　');}
 const CONFIG={GAS_URL:'https://script.google.com/macros/s/AKfycbzblWrGas_CcxS6mZBEvVI2Ur9LEIge9_ihC5okv4ZUBFfLcjnE_FPg8qWG19qyZvZu/exec'};
 let PEOPLE=[],VEHICLES=[],SITES=[],GAICHU_COMPANIES=[],INPUT_USERS=[],actuals=[];
 const board={}, pstatus={};
@@ -459,7 +465,7 @@ function renderGrid(){
     const sites=SITES.filter(s=>st.co==='all'||s.co===st.co);
     if(!sites.length)body=`<tr><td class="rowlab">—</td><td colspan="${n}" class="empty">現場なし</td></tr>`;
     sites.forEach(s=>{
-      body+=`<tr><td class="rowlab"><div class="rl-name">${esc(s.name)}</div><div class="rl-sub">${COMPANIES[s.co].name} ・ 担当 ${s.tantou.map(id=>(pById[id]||{name:id}).name).join('、')||'—'}</div></td>`;
+      body+=`<tr><td class="rowlab"><div class="rl-name">${esc(s.name)}</div><div class="rl-sub">${COMPANIES[s.co].name} ・ 担当 ${s.tantou.map(id=>(pById[id]||{name:id}).name).join('、')||'—'}</div>${siteMetaInline(s)?`<div class="rl-sub2">${siteMetaInline(s)}</div>`:''}</td>`;
       dates.forEach(d=>{const ds=ymd(d);const a=dayAssign(ds)[s.id];const wd=d.getDay();const wknd=(wd===0||wd===6)?' wknd':'';
         if(!a){body+=detail==='bar'?`<td class="gcell qadd${wknd}" data-qadd="${s.id}|${ds}" title="クリックで作業内容を入力"></td>`:`<td class="${wknd}"></td>`;return;}
         if(detail==='bar'){const txt=(a.content||'').trim();body+=`<td class="gcell active${wknd}" data-drill="${ds}" title="${esc(a.content||'')}"><div class="gbar ${s.co}">${esc(txt?trunc(txt,8):'—')}</div></td>`;return;}
