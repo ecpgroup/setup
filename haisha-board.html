@@ -40,6 +40,12 @@
   .date-nav input{background:var(--surface2);border:1px solid var(--line);color:var(--text);border-radius:8px;padding:7px 8px;font-size:14px;}
   #rangeLabel{font-size:13px;color:var(--muted);min-width:120px;}
   .who{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--muted);} .who select{background:var(--surface2);border:1px solid var(--line);color:var(--text);border-radius:8px;padding:7px 8px;font-size:13px;}
+  .who-name{color:var(--text);font-weight:600;} .who-logout{background:var(--surface2);border:1px solid var(--line);color:var(--muted);border-radius:8px;padding:6px 10px;font-size:12px;cursor:pointer;}
+  .login-badge{font-size:11px;border-radius:999px;padding:3px 9px;white-space:nowrap;} .login-badge.on{background:rgba(92,194,106,.15);color:#5cc26a;} .login-badge.off{background:rgba(255,157,157,.12);color:#ff9d9d;}
+  body.ro .add,body.ro .x,body.ro .del-site,body.ro [data-gai],body.ro [data-trans],body.ro .pstat,body.ro #openCopy,body.ro aside{display:none!important;}
+  body.ro [data-content]{pointer-events:none;background:transparent;border:none;}
+  body.nomanage #openAdmin{display:none!important;}
+  body.ownco .fchip{display:none!important;}
   .filters{display:flex;gap:8px;padding:0 16px 10px;flex-wrap:wrap;align-items:center;}
   .fchip{background:var(--surface2);border:1px solid var(--line);color:var(--muted);padding:6px 14px;border-radius:999px;font-size:13px;cursor:pointer;user-select:none;}
   .fchip.active{color:#fff;border-color:transparent;}
@@ -206,7 +212,7 @@
     <div class="date-nav"><button id="prevBtn">‹</button><input type="date" id="dateInput"><button id="nextBtn">›</button></div>
     <span id="rangeLabel"></span>
     <span id="flash" style="font-size:12px;color:var(--muted);min-width:64px"></span>
-    <div class="who">入力者 <select id="inputUser"></select></div>
+    <div class="who" id="whoBox"></div>
   </div>
   <div class="filters" id="coFilters">
     <span class="fchip active" data-co="all">全社</span><span class="fchip" data-co="nexus">ネクサス</span>
@@ -267,7 +273,7 @@
   <div class="modal-head"><span class="t">登録・管理（マスタ）</span><button class="c" id="adminClose">×</button></div>
   <div class="modal-filter" id="adminTabs">
     <span class="mf active" data-tab="site">現場</span><span class="mf" data-tab="staff">社員</span>
-    <span class="mf" data-tab="kizai">機材・車両</span><span class="mf" data-tab="gaichu">外注会社</span>
+    <span class="mf" data-tab="kizai">機材・車両</span><span class="mf" data-tab="gaichu">外注会社</span><span class="mf" data-tab="login">ログイン状況</span>
   </div>
   <div class="picklist" id="adminBody"></div>
 </div></div>
@@ -307,6 +313,16 @@ function siteMetaInline(s){const p=[];
 const CONFIG={GAS_URL:'https://script.google.com/macros/s/AKfycbzblWrGas_CcxS6mZBEvVI2Ur9LEIge9_ihC5okv4ZUBFfLcjnE_FPg8qWG19qyZvZu/exec'};
 const LINE_CHANNEL_ID='2010462402';
 const AUTH={token:localStorage.getItem('haisha_session')||'',name:localStorage.getItem('haisha_name')||''};
+let ME={role:'管理',scope:'全社',company:''};
+function canEdit(){return ME.role==='編集'||ME.role==='管理';}
+function canManage(){return ME.role==='管理';}
+function applyPerms(){
+  document.body.classList.toggle('ro',!canEdit());
+  document.body.classList.toggle('nomanage',!canManage());
+  if(ME.scope==='自社'&&ME.company){st.co=ME.company;document.body.classList.add('ownco');}
+  else document.body.classList.remove('ownco');
+  updateWho();
+}
 let PEOPLE=[],VEHICLES=[],SITES=[],GAICHU_COMPANIES=[],INPUT_USERS=[],actuals=[];
 const board={}, pstatus={};
 
@@ -321,9 +337,11 @@ const mondayOf=s=>{const x=new Date(s);const w=(x.getDay()+6)%7;x.setDate(x.getD
 const trunc=(s,n)=>s&&s.length>n?s.slice(0,n)+'…':s;
 
 // ===== API 連携 =====
-function rebuildMaps(){pById=Object.fromEntries(PEOPLE.map(p=>[p.id,p]));vById=Object.fromEntries(VEHICLES.map(v=>[v.id,v]));
-  document.getElementById('inputUser').innerHTML=INPUT_USERS.map(u=>`<option>${esc(u)}</option>`).join('');}
-function currentUser(){return document.getElementById('inputUser').value||'';}
+function rebuildMaps(){pById=Object.fromEntries(PEOPLE.map(p=>[p.id,p]));vById=Object.fromEntries(VEHICLES.map(v=>[v.id,v]));applyPerms();}
+function updateWho(){const box=document.getElementById('whoBox');if(!box)return;
+  if(AUTH.name){box.innerHTML=`<span class="who-name">👤 ${esc(AUTH.name)}</span><button class="who-logout" id="logoutBtn">ログアウト</button>`;document.getElementById('logoutBtn').onclick=doLogout;}
+  else{box.innerHTML=`入力者 <select id="inputUser">${INPUT_USERS.map(u=>`<option>${esc(u)}</option>`).join('')}</select>`;}}
+function currentUser(){if(AUTH.name)return AUTH.name;const el=document.getElementById('inputUser');return el?el.value:'';}
 function flash(m){const el=document.getElementById('flash');if(el)el.textContent=m||'';}
 async function api(params){params.token=AUTH.token;const r=await fetch(CONFIG.GAS_URL+'?'+new URLSearchParams(params));return r.json();}
 async function apiPost(payload){if(payload.token===undefined)payload.token=AUTH.token;const r=await fetch(CONFIG.GAS_URL,{method:'POST',body:JSON.stringify(payload)});return r.json();}
@@ -332,7 +350,8 @@ async function loadMasters(){
   let r;try{r=await api({action:'masters'});}catch(e){flash('通信エラー');return false;}
   if(authFail(r))return false;
   if(!r||!r.ok){flash('マスタ読込失敗');return false;}
-  PEOPLE=(r.staff||[]).map(s=>({id:s.code,name:s.name,co:normCo(s.company)}));
+  ME=r.me||{role:'管理',scope:'全社',company:''};
+  PEOPLE=(r.staff||[]).map(s=>({id:s.code,name:s.name,co:normCo(s.company),dispatch:s.dispatch!==false}));
   VEHICLES=(r.kizai||[]).map(k=>({id:k.code,name:k.name,kind:k.kubun||'',co:normCo(k.company)}));
   SITES=(r.sites||[]).map(s=>({id:s.code,name:s.name,co:normCo(s.company),tantou:s.tantou||[],status:s.status||'',client:s.client||'',clientContact:s.clientContact||'',qty:(s.qty==null?'':s.qty),unit:s.unit||'',note:s.note||''}));
   GAICHU_COMPANIES=r.gaichu||[];
@@ -373,6 +392,7 @@ async function saveDay(date){
   flash('保存中…');
   let r;try{r=await apiPost({action:'savePlan',date:date,user:currentUser(),siteDays:siteDays,assign:assign,trans:trans,status:statuses});}catch(e){flash('保存失敗(通信)');return;}
   if(authFail(r))return;
+  if(r&&r.status==='forbidden'){flash('権限がありません（閲覧のみ）');return;}
   flash(r&&r.ok?'保存しました':'保存失敗');
 }
 function commitDay(date){saveDay(date);render();}
@@ -433,7 +453,7 @@ function dayAssign(date){return board[date]||{};}
 function getStatus(date,pid){return (pstatus[date]||{})[pid]||'';}
 function usageOn(date){const cp={},cv={},a=dayAssign(date);Object.keys(a).forEach(sid=>{a[sid].people.forEach(id=>cp[id]=(cp[id]||0)+1);a[sid].vehicles.forEach(id=>cv[id]=(cv[id]||0)+1);});return {cp,cv};}
 function sitesOnDay(date){const a=dayAssign(date),m=sById();return Object.keys(a).map(sid=>({s:m[sid],a:a[sid]})).filter(o=>o.s);}
-function missPeopleOn(date){const {cp}=usageOn(date);return PEOPLE.filter(p=>(st.co==='all'||p.co===st.co)&&!(cp[p.id]>0)&&!getStatus(date,p.id));}
+function missPeopleOn(date){const {cp}=usageOn(date);return PEOPLE.filter(p=>p.dispatch!==false&&(st.co==='all'||p.co===st.co)&&!(cp[p.id]>0)&&!getStatus(date,p.id));}
 function peopleLabel(a){const self=a.people.length;const byCo={};(a.gaichu||[]).forEach(g=>byCo[g.company]=(byCo[g.company]||0)+1);
   const parts=[self,...Object.values(byCo)];return parts.join('+');}
 function cellTip(a){let t='配員: '+(a.people.map(id=>(pById[id]||{name:id}).name).join('、')||'なし');
@@ -504,7 +524,7 @@ function cardEl(o,cp,cv){
     ${transHtml('unpan','運搬','🚛',a,s.id)}${transHtml('kaiso','回送','🏗',a,s.id)}`;
   el.addEventListener('dragover',e=>{e.preventDefault();el.classList.add('drop-ok');});
   el.addEventListener('dragleave',()=>el.classList.remove('drop-ok'));
-  el.addEventListener('drop',e=>{e.preventDefault();el.classList.remove('drop-ok');
+  el.addEventListener('drop',e=>{e.preventDefault();el.classList.remove('drop-ok');if(!canEdit())return;
     const kind=e.dataTransfer.getData('kind'),id=e.dataTransfer.getData('id');if(!kind||!id)return;
     const arr=kind==='person'?a.people:a.vehicles;if(!arr.includes(id)){arr.push(id);commitDay(st.curDate);}});
   return el;
@@ -593,7 +613,7 @@ document.getElementById('content').addEventListener('click',e=>{const d=e.target
   if(d&&st.view!=='day'){st.ret=st.view;st.curDate=d.dataset.drill;st.view='day';
     document.querySelectorAll('#viewSeg button').forEach(b=>b.classList.toggle('active',b.dataset.v==='day'));render();}});
 document.getElementById('content').addEventListener('click',e=>{
-  const q=e.target.closest('[data-qadd]');if(!q||st.view!=='month'||q.querySelector('input'))return;
+  const q=e.target.closest('[data-qadd]');if(!q||st.view!=='month'||q.querySelector('input')||!canEdit())return;
   const [sid,ds]=q.dataset.qadd.split('|');q.classList.add('editing');q.innerHTML='<input class="qadd-in" placeholder="作業内容">';
   const inp=q.querySelector('input');inp.focus();let done=false;
   const commit=save=>{if(done)return;done=true;const v=inp.value.trim();
@@ -605,7 +625,7 @@ document.getElementById('backHost').addEventListener('click',e=>{if(e.target.id=
 
 // day ops
 document.getElementById('content').addEventListener('click',e=>{
-  if(st.view!=='day')return;
+  if(st.view!=='day'||!canEdit())return;
   const rm=e.target.closest('[data-rm]'),rmg=e.target.closest('[data-rmg]'),add=e.target.closest('[data-add]'),gai=e.target.closest('[data-gai]'),del=e.target.closest('[data-del]'),trans=e.target.closest('[data-trans]'),rmt=e.target.closest('[data-rmt]');
   if(rm){const sid=rm.dataset.sid;
     if(rm.dataset.rm==='tantou'){const s=sById()[sid];const i=s.tantou.indexOf(rm.dataset.id);if(i>=0)s.tantou.splice(i,1);}
@@ -617,13 +637,13 @@ document.getElementById('content').addEventListener('click',e=>{
   if(rmt){const a=dayAssign(st.curDate)[rmt.dataset.sid];a[rmt.dataset.rmt].splice(+rmt.dataset.i,1);commitDay(st.curDate);}
   if(del){if(confirm('この現場をこの日から外しますか？')){delete board[st.curDate][del.dataset.del];commitDay(st.curDate);}}});
 document.getElementById('content').addEventListener('change',e=>{
-  const ct=e.target.closest('[data-content]');if(ct){dayAssign(st.curDate)[ct.dataset.content].content=ct.value;saveDay(st.curDate);}});
-document.getElementById('content').addEventListener('change',e=>{const ps=e.target.closest('[data-pstat]');if(!ps)return;
+  if(!canEdit())return;const ct=e.target.closest('[data-content]');if(ct){dayAssign(st.curDate)[ct.dataset.content].content=ct.value;saveDay(st.curDate);}});
+document.getElementById('content').addEventListener('change',e=>{const ps=e.target.closest('[data-pstat]');if(!ps||!canEdit())return;
   const id=ps.dataset.pstat,v=ps.value;pstatus[st.curDate]=pstatus[st.curDate]||{};if(v)pstatus[st.curDate][id]=v;else delete pstatus[st.curDate][id];commitDay(st.curDate);});
 ['utilPeople','utilVehicles'].forEach(z=>{
   document.getElementById(z).addEventListener('dragstart',e=>{const r=e.target.closest('.util-row');if(!r)return;e.dataTransfer.setData('kind',r.dataset.kind);e.dataTransfer.setData('id',r.dataset.id);r.classList.add('dragging');});
   document.getElementById(z).addEventListener('dragend',e=>{const r=e.target.closest('.util-row');if(r)r.classList.remove('dragging');});});
-document.getElementById('addSite').addEventListener('click',()=>openPicker('site',null));
+document.getElementById('addSite').addEventListener('click',()=>{if(canEdit())openPicker('site',null);});
 
 // view / nav / filter / rowtoggle
 document.getElementById('viewSeg').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;st.view=b.dataset.v;st.ret=null;
@@ -690,6 +710,7 @@ document.getElementById('transGo').onclick=()=>{const veh=document.getElementByI
 
 // copy
 document.getElementById('openCopy').onclick=()=>{
+  if(!canEdit())return;
   const scope=st.co==='all'?'全社':COMPANIES[st.co].name;document.getElementById('copyTitle').textContent=st.curDate+' の配置をコピー';
   const day=dayAssign(st.curDate);const m=sById();
   const cand=Object.keys(day).filter(sid=>{const s=m[sid];if(!s)return false;if(!(st.co==='all'||s.co===st.co))return false;const a=day[sid];return a.people.length||a.vehicles.length||(a.gaichu&&a.gaichu.length)||(a.unpan&&a.unpan.length)||(a.kaiso&&a.kaiso.length);});
@@ -717,13 +738,24 @@ let adminTab='site',editSiteCode=null;
 function coOpts(sel){return CO_ORDER.map(c=>`<option value="${c}"${c===sel?' selected':''}>${COMPANIES[c].name}</option>`).join('');}
 function val(id){const el=document.getElementById(id);return el?el.value.trim():'';}
 function openAdmin(){adminTab='site';editSiteCode=null;document.querySelectorAll('#adminTabs .mf').forEach(x=>x.classList.toggle('active',x.dataset.tab==='site'));renderAdmin();document.getElementById('adminBg').classList.add('show');}
-document.getElementById('openAdmin').onclick=openAdmin;
+document.getElementById('openAdmin').onclick=()=>{if(canManage())openAdmin();};
 document.getElementById('adminClose').onclick=()=>document.getElementById('adminBg').classList.remove('show');
 document.getElementById('adminBg').addEventListener('click',e=>{if(e.target.id==='adminBg')e.currentTarget.classList.remove('show');});
+async function loadLoginStatus(){
+  let r;try{r=await api({action:'loginStatus'});}catch(e){r=null;}
+  if(authFail(r))return;
+  const b=document.getElementById('adminBody');
+  if(!r||!r.ok){b.innerHTML='<div class="empty">取得に失敗しました</div>';return;}
+  const fmt=t=>{if(!t)return '—';const d=new Date(t);return `${d.getMonth()+1}/${d.getDate()} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;};
+  const linked=r.list.filter(s=>s.linked).length;
+  b.innerHTML=`<div style="padding:10px 14px;font-size:12px;color:var(--muted)">紐付け済 ${linked} / ${r.list.length} 名</div>
+    <div class="adm-list">${r.list.map(s=>`<div class="adm-row"><span class="nm">${esc(s.name)}</span><span class="adm-sub">${COMPANIES[normCo(s.company)]?COMPANIES[normCo(s.company)].name:esc(s.company)}${s.linked&&s.lineName?' ・ LINE: '+esc(s.lineName):''}${s.lastLogin?' ・ 最終 '+fmt(s.lastLogin):''}</span><span class="login-badge ${s.linked?'on':'off'}">${s.linked?'紐付け済':'未紐付け'}</span></div>`).join('')||'<div class="empty">社員なし</div>'}</div>`;
+}
 document.getElementById('adminTabs').addEventListener('click',e=>{const t=e.target.closest('.mf');if(!t)return;adminTab=t.dataset.tab;editSiteCode=null;
   document.querySelectorAll('#adminTabs .mf').forEach(x=>x.classList.toggle('active',x===t));renderAdmin();});
 function renderAdmin(){
   const b=document.getElementById('adminBody'),defCo=st.co==='all'?'nexus':st.co;
+  if(adminTab==='login'){b.innerHTML='<div class="empty">読み込み中…</div>';loadLoginStatus();return;}
   if(adminTab==='site'){
     const ed=editSiteCode?SITES.find(s=>s.id===editSiteCode):null;
     b.innerHTML=`<div class="adm-form">
