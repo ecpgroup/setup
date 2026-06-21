@@ -409,9 +409,10 @@ async function init(){
     else{showLogin('ログインに失敗しました。もう一度お試しください。');return;}
   }
   flash('読み込み中…');
-  const ok=await loadMasters();
-  if(!ok)return;          // 未認証ならshowLoginが出ている
-  hideLogin();await go();
+  const rg=visibleRange();
+  const [mOk]=await Promise.all([loadMasters(),loadPlan(rg.start,rg.end)]);
+  if(!mOk)return;          // 未認証ならshowLoginが出ている
+  hideLogin();render();flash('');
 }
 function redirectUri(){return location.origin+location.pathname;}
 function setSession(r){AUTH.token=r.token;AUTH.name=r.name||'';localStorage.setItem('haisha_session',AUTH.token);localStorage.setItem('haisha_name',AUTH.name);}
