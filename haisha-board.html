@@ -2,7 +2,15 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#0e1116">
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="配車ボード">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="icon" href="icon-192.png">
 <title>配員・配車ボード ｜ ECPGROUP</title>
 <style>
   :root{
@@ -85,7 +93,7 @@
   .pstat{background:var(--surface2);border:1px solid var(--line);color:var(--text);border-radius:7px;padding:3px 6px;font-size:12px;}
   .small-co{font-size:10px;color:var(--faint);margin-left:2px;}
 
-  .gridwrap{overflow-x:auto;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface);}
+  .gridwrap{overflow:auto;-webkit-overflow-scrolling:touch;max-height:calc(100vh - 150px);max-height:calc(100dvh - 150px);border:1px solid var(--line);border-radius:var(--radius);background:var(--surface);}
   .gtable{border-collapse:separate;border-spacing:0;width:100%;font-size:12.5px;}
   .gtable th,.gtable td{border-bottom:1px solid var(--line);border-right:1px solid var(--line);padding:7px 9px;text-align:center;white-space:nowrap;}
   .gtable thead th{position:sticky;top:0;background:var(--surface2);z-index:2;color:var(--muted);font-weight:500;cursor:pointer;}
@@ -104,6 +112,13 @@
   .gbar{min-height:18px;border-radius:4px;padding:2px 5px;font-size:10px;line-height:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
   .gbar.nexus{background:var(--nexus-soft);border:1px solid var(--nexus)} .gbar.forest{background:var(--forest-soft);border:1px solid var(--forest)} .gbar.igarin{background:var(--igarin-soft);border:1px solid var(--igarin)}
   .divlab{position:sticky;left:0;background:var(--surface2);color:var(--muted);font-size:11px;text-align:left;letter-spacing:.06em;}
+  @media (max-width:640px){
+    .gridwrap{max-height:calc(100vh - 128px);max-height:calc(100dvh - 128px);}
+    .gtable{font-size:12px;} .gtable th,.gtable td{padding:6px 6px;}
+    .gtable .rowlab{min-width:114px;max-width:148px;}
+    .rowlab .rl-sub{font-size:10px;} .rowlab .rl-sub2{font-size:9.5px;}
+    .gtable td.tcell{min-width:120px;}
+  }
 
   .modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.55);display:none;z-index:50;align-items:flex-end;justify-content:center;} .modal-bg.show{display:flex}
   @media(min-width:880px){.modal-bg{align-items:center}}
@@ -677,6 +692,9 @@ document.getElementById('adminBody').addEventListener('click',async e=>{
 });
 
 init();
+</script>
+<script>
+if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('sw.js').catch(function(){});});}
 </script>
 </body>
 </html>
