@@ -193,6 +193,8 @@
   .adm-form .cp-go{flex:none;padding:9px 16px;}
   .adm-cancel{background:var(--surface2);border:1px solid var(--line);color:var(--muted);border-radius:8px;padding:9px 14px;cursor:pointer;}
   .adm-list{padding:4px 8px;}
+  .adm-group{font-size:11px;font-weight:700;color:var(--accent);letter-spacing:.04em;padding:10px 4px 4px;border-bottom:1px solid var(--line);margin-top:4px;}
+  .adm-group:first-child{margin-top:0;}
   .adm-row{display:flex;align-items:center;gap:10px;padding:9px 8px;border-bottom:1px solid var(--line);font-size:13.5px;}
   .adm-row .nm{font-weight:600;}
   .adm-row .adm-sub{flex:1;color:var(--muted);font-size:12px;}
@@ -233,7 +235,8 @@
   <aside>
     <div class="aside-head">稼働状況／パレット<span class="legend" id="asideLegend">PCはここから現場へドラッグ。</span></div>
     <div class="util-sec"><div class="util-title">人員</div><div id="utilPeople"></div></div>
-    <div class="util-sec"><div class="util-title">車両</div><div id="utilVehicles"></div></div>
+    <div class="util-sec"><div class="util-title">車両</div><div id="utilVehiclesV"></div></div>
+    <div class="util-sec"><div class="util-title">重機</div><div id="utilVehiclesH"></div></div>
   </aside>
 </div>
 
@@ -549,8 +552,11 @@ function renderPalette(cp,cv){
       return `<div class="util-row${miss?' miss':''}" draggable="true" data-kind="person" data-id="${p.id}"><span class="grip">⠿</span><span class="nm">${esc(p.name)}</span>${sel}</div>`;}
     return `<div class="util-row" draggable="true" data-kind="person" data-id="${p.id}"><span class="grip">⠿</span><span class="nm">${esc(p.name)}<span class="small-co">${COMPANIES[p.co].name.slice(0,4)}</span></span><span class="badge idle">未割当</span></div>`;
   }).join('')||'<div class="empty">対象なし</div>';
-  document.getElementById('utilVehicles').innerHTML=filt(VEHICLES).map(v=>{const n=cv[v.id]||0,c=n===0?'idle':(n>1?'dupe':'set'),t=n===0?'空き':(n>1?('⚠被り×'+n):'稼働');
-    return `<div class="util-row" draggable="true" data-kind="vehicle" data-id="${v.id}"><span class="grip">⠿</span><span class="nm">${esc(v.name)}<span class="small-co">${v.kind}</span></span><span class="badge ${c}">${t}</span></div>`;}).join('')||'<div class="empty">対象なし</div>';
+  const vehHtml=(list)=>list.map(v=>{const n=cv[v.id]||0,c=n===0?'idle':(n>1?'dupe':'set'),t=n===0?'空き':(n>1?('⚠被り×'+n):'稼働');
+    return `<div class="util-row" draggable="true" data-kind="vehicle" data-id="${v.id}"><span class="grip">⠿</span><span class="nm">${esc(v.name)}<span class="small-co">${esc(v.kind||'')}</span></span><span class="badge ${c}">${t}</span></div>`;}).join('')||'<div class="empty">対象なし</div>';
+  const fv=filt(VEHICLES);
+  document.getElementById('utilVehiclesV').innerHTML=vehHtml(fv.filter(v=>v.kind!=='重機'));
+  document.getElementById('utilVehiclesH').innerHTML=vehHtml(fv.filter(v=>v.kind==='重機'));
 }
 
 // =============== GRID ===============
@@ -641,7 +647,7 @@ document.getElementById('content').addEventListener('change',e=>{
   if(!canEdit())return;const ct=e.target.closest('[data-content]');if(ct){dayAssign(st.curDate)[ct.dataset.content].content=ct.value;saveDay(st.curDate);}});
 document.getElementById('content').addEventListener('change',e=>{const ps=e.target.closest('[data-pstat]');if(!ps||!canEdit())return;
   const id=ps.dataset.pstat,v=ps.value;pstatus[st.curDate]=pstatus[st.curDate]||{};if(v)pstatus[st.curDate][id]=v;else delete pstatus[st.curDate][id];commitDay(st.curDate);});
-['utilPeople','utilVehicles'].forEach(z=>{
+['utilPeople','utilVehiclesV','utilVehiclesH'].forEach(z=>{
   document.getElementById(z).addEventListener('dragstart',e=>{const r=e.target.closest('.util-row');if(!r)return;e.dataTransfer.setData('kind',r.dataset.kind);e.dataTransfer.setData('id',r.dataset.id);r.classList.add('dragging');});
   document.getElementById(z).addEventListener('dragend',e=>{const r=e.target.closest('.util-row');if(r)r.classList.remove('dragging');});});
 document.getElementById('addSite').addEventListener('click',()=>{if(canEdit())openPicker('site',null);});
@@ -774,8 +780,10 @@ function renderAdmin(){
     b.innerHTML=`<div class="adm-form"><input id="adName" class="tin" placeholder="氏名"><select id="adCo" class="tin">${coOpts(defCo)}</select><button class="cp-go" id="adStaffGo">＋ 社員を登録</button></div>
       <div class="adm-list">${PEOPLE.map(p=>`<div class="adm-row"><span class="nm">${esc(p.name)}</span><span class="adm-sub">${COMPANIES[p.co]?COMPANIES[p.co].name:p.co}</span><button class="adm-mini" data-offstaff="${p.id}">無効化</button></div>`).join('')||'<div class="empty">社員なし</div>'}</div>`;
   }else if(adminTab==='kizai'){
+    const admVeh=(list)=>list.map(v=>`<div class="adm-row"><span class="nm">${esc(v.name)}</span><span class="adm-sub">${COMPANIES[v.co]?COMPANIES[v.co].name:v.co}</span><button class="adm-mini" data-offkizai="${v.id}">無効化</button></div>`).join('');
+    const vV=VEHICLES.filter(v=>v.kind!=='重機'), vH=VEHICLES.filter(v=>v.kind==='重機');
     b.innerHTML=`<div class="adm-form"><input id="adName" class="tin" placeholder="表示名（例：4tダンプ）"><select id="adKubun" class="tin"><option value="車両">車両</option><option value="重機">重機</option></select><select id="adCo" class="tin">${coOpts(defCo)}</select><button class="cp-go" id="adKizaiGo">＋ 機材を登録</button></div>
-      <div class="adm-list">${VEHICLES.map(v=>`<div class="adm-row"><span class="nm">${esc(v.name)}</span><span class="adm-sub">${esc(v.kind||'')} ・ ${COMPANIES[v.co]?COMPANIES[v.co].name:v.co}</span><button class="adm-mini" data-offkizai="${v.id}">無効化</button></div>`).join('')||'<div class="empty">機材なし</div>'}</div>`;
+      <div class="adm-list"><div class="adm-group">車両</div>${admVeh(vV)||'<div class="empty">車両なし</div>'}<div class="adm-group">重機</div>${admVeh(vH)||'<div class="empty">重機なし</div>'}</div>`;
   }else{
     b.innerHTML=`<div class="adm-form"><input id="adName" class="tin" placeholder="外注会社名"><button class="cp-go" id="adGaichuGo">＋ 外注会社を登録</button></div>
       <div class="adm-list">${GAICHU_COMPANIES.map(c=>`<div class="adm-row"><span class="nm">${esc(c)}</span><button class="adm-mini" data-offgaichu="${esc(c)}">無効化</button></div>`).join('')||'<div class="empty">外注会社なし</div>'}</div>`;
