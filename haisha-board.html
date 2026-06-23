@@ -88,9 +88,10 @@
   .co-dot{width:9px;height:9px;border-radius:50%;flex:none;} .co-dot.nexus{background:var(--nexus)} .co-dot.forest{background:var(--forest)} .co-dot.igarin{background:var(--igarin)}
   .site-name{font-weight:600;font-size:15px;flex:1;border:none;background:transparent;color:var(--text);outline:none;min-width:0;} .site-name:focus{border-bottom:1px dashed var(--faint);}
   .co-tag{font-size:11px;color:var(--muted);white-space:nowrap;} .del-site{background:none;border:none;color:var(--faint);cursor:pointer;font-size:18px;padding:2px 4px;} .del-site:hover{color:var(--warn)}
-  .content-row{display:flex;align-items:center;gap:8px;padding:8px 14px;border-bottom:1px solid var(--line);}
-  .content-row .cl{font-size:11px;color:var(--muted);white-space:nowrap;}
-  .content-row input{flex:1;background:var(--surface2);border:1px solid var(--line);color:var(--text);border-radius:8px;padding:7px 9px;font-size:13px;}
+  .content-row{display:flex;align-items:flex-start;gap:8px;padding:8px 14px;border-bottom:1px solid var(--line);}
+  .content-row .cl{font-size:11px;color:var(--muted);white-space:nowrap;padding-top:8px;}
+  .content-row input,.content-row textarea{flex:1;background:var(--surface2);border:1px solid var(--line);color:var(--text);border-radius:8px;padding:7px 9px;font-size:13px;}
+  .content-row textarea{font-family:inherit;line-height:1.55;resize:none;overflow:hidden;min-height:34px;}
   .tantou-row{padding:8px 14px;background:var(--tantou-bg);border-bottom:1px solid var(--line);}
   .row{padding:10px 14px;} .row+.row{border-top:1px solid var(--line);}
   .row-label{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px;}
@@ -509,22 +510,28 @@ function renderDay(){
     if(!rows.length)box.innerHTML='<div class="empty" style="padding:40px">この会社の現場がありません。下の「＋ 現場を追加」から登録できます。</div>';
     rows.forEach(o=>box.appendChild(cardEl(o,cp,cv)));host.appendChild(box);}
   renderPalette(cp,cv);
+  document.querySelectorAll('#content textarea[data-content]').forEach(autoGrow);
 }
+function autoGrow(t){t.style.height='auto';t.style.height=t.scrollHeight+'px';}
 function cardEl(o,cp,cv){
   const s=o.s,a=o.a;const hasDupe=a.people.some(id=>cp[id]>1)||a.vehicles.some(id=>cv[id]>1);
+  const vehV=a.vehicles.filter(id=>(vById[id]||{}).kind!=='重機');
+  const vehH=a.vehicles.filter(id=>(vById[id]||{}).kind==='重機');
   const el=document.createElement('div');el.className='card'+(hasDupe?' conflict':'');el.dataset.sid=s.id;
   el.innerHTML=`
     <div class="card-head"><span class="co-dot ${s.co}"></span><span class="site-name">${esc(s.name)}</span><span class="co-tag">${COMPANIES[s.co].name}</span><button class="del-site" data-del="${s.id}" title="この日からこの現場を外す">×</button></div>
     ${siteMetaHtml(s)}
-    <div class="content-row"><span class="cl">作業内容</span><input data-content="${s.id}" value="${esc(a.content||'')}" placeholder="例：路盤工、掘削、間伐 …"></div>
+    <div class="content-row"><span class="cl">作業内容</span><textarea data-content="${s.id}" rows="1" placeholder="例：路盤工、掘削、間伐 …（改行で複数行）">${esc(a.content||'')}</textarea></div>
     <div class="tantou-row"><div class="row-label">⭐ 担当（現場マスタ）</div><div class="chips">
       ${s.tantou.length?s.tantou.map(id=>`<span class="chip tantou">${esc((pById[id]||{name:id}).name)}</span>`).join(''):'<span style="color:var(--faint);font-size:13px">—</span>'}</div></div>
     <div class="row"><div class="row-label">👷 配員（自社） <span style="color:var(--faint)">(${a.people.length})</span></div><div class="chips">
       ${a.people.map(id=>chip('person',id,(pById[id]||{name:id}).name,cp[id]>1,s.id)).join('')}<button class="add" data-add="person" data-sid="${s.id}">＋ 追加</button></div></div>
     <div class="row"><div class="row-label">🤝 外注 <span style="color:var(--faint)">(${(a.gaichu||[]).length})</span></div><div class="chips">
       ${(a.gaichu||[]).map((g,i)=>`<span class="chip gaichu">${esc(g.company)}${g.name?' '+esc(g.name):''}<span class="x" data-rmg="${i}" data-sid="${s.id}">×</span></span>`).join('')}<button class="add" data-gai="${s.id}">＋ 外注</button></div></div>
-    <div class="row"><div class="row-label">🚚 車両 <span style="color:var(--faint)">(${a.vehicles.length})</span></div><div class="chips">
-      ${a.vehicles.map(id=>chip('vehicle',id,(vById[id]?vById[id].name+'（'+vById[id].kind+'）':id),cv[id]>1,s.id)).join('')}<button class="add" data-add="vehicle" data-sid="${s.id}">＋ 追加</button></div></div>
+    <div class="row"><div class="row-label">🚚 車両 <span style="color:var(--faint)">(${vehV.length})</span></div><div class="chips">
+      ${vehV.map(id=>chip('vehicle',id,(vById[id]||{name:id}).name,cv[id]>1,s.id)).join('')}<button class="add" data-add="vehicleV" data-sid="${s.id}">＋ 追加</button></div></div>
+    <div class="row"><div class="row-label">🚜 重機 <span style="color:var(--faint)">(${vehH.length})</span></div><div class="chips">
+      ${vehH.map(id=>chip('vehicle',id,(vById[id]||{name:id}).name,cv[id]>1,s.id)).join('')}<button class="add" data-add="vehicleH" data-sid="${s.id}">＋ 追加</button></div></div>
     ${transHtml('unpan','運搬','🚛',a,s.id)}${transHtml('kaiso','回送','🏗',a,s.id)}`;
   el.addEventListener('dragover',e=>{e.preventDefault();el.classList.add('drop-ok');});
   el.addEventListener('dragleave',()=>el.classList.remove('drop-ok'));
@@ -585,7 +592,7 @@ function renderGrid(){
       body+=`<tr><td class="rowlab"><div class="rl-name">${esc(s.name)}</div><div class="rl-sub">${COMPANIES[s.co].name} ・ 担当 ${s.tantou.map(id=>(pById[id]||{name:id}).name).join('、')||'—'}</div>${siteMetaInline(s)?`<div class="rl-sub2">${siteMetaInline(s)}</div>`:''}</td>`;
       dates.forEach(d=>{const ds=ymd(d);const a=dayAssign(ds)[s.id];const wd=d.getDay();const wknd=(wd===0||wd===6)?' wknd':'';
         if(!a){body+=detail==='bar'?`<td class="gcell qadd${wknd}" data-qadd="${s.id}|${ds}" title="クリックで作業内容を入力"></td>`:`<td class="${wknd}"></td>`;return;}
-        if(detail==='bar'){const txt=(a.content||'').trim();body+=`<td class="gcell active${wknd}" data-drill="${ds}" title="${esc(a.content||'')}"><div class="gbar ${s.co}">${esc(txt?trunc(txt,8):'—')}</div></td>`;return;}
+        if(detail==='bar'){const full=(a.content||'').trim();const first=full.split('\n')[0].trim();const multi=full.indexOf('\n')>=0;body+=`<td class="gcell active${wknd}" data-drill="${ds}" title="${esc(full)}"><div class="gbar ${s.co}">${esc(first?trunc(first,8)+(multi?' …':''):'—')}</div></td>`;return;}
         if(mode==='trans'){
           const items=[...(a.unpan||[]).map(t=>({...t,k:'unpan'})),...(a.kaiso||[]).map(t=>({...t,k:'kaiso'}))];
           if(!items.length){body+=`<td class="gcell active tcell${wknd}" data-drill="${ds}"><span class="tmuted">—</span></td>`;return;}
@@ -643,6 +650,7 @@ document.getElementById('content').addEventListener('click',e=>{
   if(trans)openTrans(trans.dataset.trans,trans.dataset.sid);
   if(rmt){const a=dayAssign(st.curDate)[rmt.dataset.sid];a[rmt.dataset.rmt].splice(+rmt.dataset.i,1);commitDay(st.curDate);}
   if(del){if(confirm('この現場をこの日から外しますか？')){delete board[st.curDate][del.dataset.del];commitDay(st.curDate);}}});
+document.getElementById('content').addEventListener('input',e=>{const ct=e.target.closest('textarea[data-content]');if(ct)autoGrow(ct);});
 document.getElementById('content').addEventListener('change',e=>{
   if(!canEdit())return;const ct=e.target.closest('[data-content]');if(ct){dayAssign(st.curDate)[ct.dataset.content].content=ct.value;saveDay(st.curDate);}});
 document.getElementById('content').addEventListener('change',e=>{const ps=e.target.closest('[data-pstat]');if(!ps||!canEdit())return;
@@ -665,7 +673,7 @@ document.getElementById('coFilters').addEventListener('click',e=>{const c=e.targ
 
 // picker
 let pick={kind:null,sid:null,co:'all'};
-function openPicker(kind,sid){pick={kind,sid,co:'all'};const lbl=kind==='site'?'現場':(kind==='person'?'配員':'車両');
+function openPicker(kind,sid){pick={kind,sid,co:'all'};const lbl=kind==='site'?'現場':(kind==='person'?'配員':(kind==='vehicleH'?'重機':'車両'));
   document.getElementById('modalTitle').textContent=lbl+'を追加';document.querySelectorAll('#modalFilter .mf').forEach(x=>x.classList.toggle('active',x.dataset.co==='all'));renderPick();document.getElementById('modalBg').classList.add('show');}
 const closePicker=()=>document.getElementById('modalBg').classList.remove('show');
 document.getElementById('modalClose').onclick=closePicker;
@@ -675,15 +683,17 @@ function renderPick(){
   if(pick.kind==='site'){const onDay=Object.keys(dayAssign(st.curDate));
     const list=SITES.filter(x=>(pick.co==='all'||x.co===pick.co)&&onDay.indexOf(x.id)===-1&&x.status!=='完了');
     document.getElementById('pickList').innerHTML=list.map(x=>`<div class="pick" data-pid="${x.id}"><div style="flex:1"><div class="nm">${esc(x.name)}</div><div class="sub">${COMPANIES[x.co].name}</div></div></div>`).join('')||'<div class="empty">追加できる現場がありません（現場マスタに登録してください）</div>';return;}
-  const isVeh=pick.kind==='vehicle';const master=isVeh?VEHICLES:PEOPLE;const {cp,cv}=usageOn(st.curDate);const used=isVeh?cv:cp;
+  const isVeh=(pick.kind==='vehicleV'||pick.kind==='vehicleH');
+  const master=pick.kind==='vehicleH'?VEHICLES.filter(v=>v.kind==='重機'):(pick.kind==='vehicleV'?VEHICLES.filter(v=>v.kind!=='重機'):PEOPLE);
+  const {cp,cv}=usageOn(st.curDate);const used=isVeh?cv:cp;
   const a=dayAssign(st.curDate)[pick.sid];const assignedHere=isVeh?a.vehicles:a.people;
   const list=master.filter(x=>pick.co==='all'||x.co===pick.co);
   document.getElementById('pickList').innerHTML=list.map(x=>{const here=assignedHere.includes(x.id);const elsewhere=(used[x.id]||0)-(here?1:0)>0;
-    const sub=isVeh?(x.kind+' ・ '+COMPANIES[x.co].name):COMPANIES[x.co].name;
+    const sub=COMPANIES[x.co]?COMPANIES[x.co].name:x.co;
     return `<div class="pick ${here?'disabled':''}" data-pid="${here?'':x.id}"><div style="flex:1"><div class="nm">${esc(x.name)}</div><div class="sub">${esc(sub)}${here?' ・ 割当済':''}</div></div>${elsewhere&&!here?'<div class="warn">⚠ 他現場に割当中</div>':''}</div>`;}).join('')||'<div class="empty">該当なし</div>';}
 document.getElementById('pickList').addEventListener('click',e=>{const p=e.target.closest('[data-pid]');if(!p||!p.dataset.pid)return;
   if(pick.kind==='site'){board[st.curDate]=board[st.curDate]||{};if(!board[st.curDate][p.dataset.pid])board[st.curDate][p.dataset.pid]={people:[],vehicles:[],gaichu:[],content:'',unpan:[],kaiso:[]};closePicker();commitDay(st.curDate);return;}
-  const a=dayAssign(st.curDate)[pick.sid];const arr=pick.kind==='vehicle'?a.vehicles:a.people;
+  const a=dayAssign(st.curDate)[pick.sid];const arr=pick.kind==='person'?a.people:a.vehicles;
   if(!arr.includes(p.dataset.pid))arr.push(p.dataset.pid);closePicker();commitDay(st.curDate);});
 
 // 外注
