@@ -195,6 +195,9 @@
   .adm-cancel{background:var(--surface2);border:1px solid var(--line);color:var(--muted);border-radius:8px;padding:9px 14px;cursor:pointer;}
   .adm-list{padding:4px 8px;}
   .adm-group{font-size:11px;font-weight:700;color:var(--accent);letter-spacing:.04em;padding:10px 4px 4px;border-bottom:1px solid var(--line);margin-top:4px;}
+  .co-multi{display:flex;gap:6px;flex-wrap:wrap;width:100%;}
+  .co-chk{display:inline-flex;align-items:center;gap:5px;background:var(--surface2);border:1px solid var(--line);border-radius:8px;padding:6px 10px;font-size:13px;cursor:pointer;}
+  .co-chk input{accent-color:var(--accent);}
   .adm-group:first-child{margin-top:0;}
   .adm-row{display:flex;align-items:center;gap:10px;padding:9px 8px;border-bottom:1px solid var(--line);font-size:13.5px;}
   .adm-row .nm{font-weight:600;}
@@ -357,7 +360,7 @@ async function loadMasters(){
   ME=r.me||{role:'管理',scope:'全社',company:''};
   PEOPLE=(r.staff||[]).map(s=>({id:s.code,name:s.name,co:normCo(s.company),dispatch:s.dispatch!==false}));
   VEHICLES=(r.kizai||[]).map(k=>({id:k.code,name:k.name,kind:k.kubun||'',co:normCo(k.company)}));
-  SITES=(r.sites||[]).map(s=>({id:s.code,name:s.name,co:normCo(s.company),tantou:s.tantou||[],status:s.status||'',client:s.client||'',clientContact:s.clientContact||'',qty:(s.qty==null?'':s.qty),unit:s.unit||'',note:s.note||''}));
+  SITES=(r.sites||[]).map(s=>({id:s.code,name:s.name,co:normCo(s.company),cos:(s.companies&&s.companies.length?s.companies:[s.company]).map(normCo),tantou:s.tantou||[],status:s.status||'',client:s.client||'',clientContact:s.clientContact||'',qty:(s.qty==null?'':s.qty),unit:s.unit||'',note:s.note||''}));
   GAICHU_COMPANIES=r.gaichu||[];
   INPUT_USERS=(r.staff||[]).map(s=>s.name);if(!INPUT_USERS.length)INPUT_USERS=['—'];
   rebuildMaps();return true;
@@ -507,20 +510,22 @@ function renderDay(){
       const box=document.createElement('div');box.className='sites';rows.forEach(o=>box.appendChild(cardEl(o,cp,cv)));host.appendChild(box);});
     if(!list.length)host.innerHTML='<div class="empty" style="padding:40px">この日の現場がありません。</div>';
   }else{
-    const rows=list.filter(o=>o.s.co===st.co);const box=document.createElement('div');box.className='sites';
+    const rows=list.filter(o=>siteInCo(o.s,st.co));const box=document.createElement('div');box.className='sites';
     if(!rows.length)box.innerHTML='<div class="empty" style="padding:40px">この会社の現場がありません。下の「＋ 現場を追加」から登録できます。</div>';
     rows.forEach(o=>box.appendChild(cardEl(o,cp,cv)));host.appendChild(box);}
   renderPalette(cp,cv);
   document.querySelectorAll('#content textarea[data-content]').forEach(autoGrow);
 }
 function autoGrow(t){t.style.height='auto';t.style.height=t.scrollHeight+'px';}
+function siteInCo(s,co){return co==='all'||(s.cos&&s.cos.length?s.cos.indexOf(co)>=0:s.co===co);}
+function coNames(s){const cos=(s.cos&&s.cos.length)?s.cos:[s.co];return cos.map(c=>COMPANIES[c]?COMPANIES[c].name:c).join('／');}
 function cardEl(o,cp,cv){
   const s=o.s,a=o.a;const hasDupe=a.people.some(id=>cp[id]>1)||a.vehicles.some(id=>cv[id]>1);
   const vehV=a.vehicles.filter(id=>(vById[id]||{}).kind!=='重機');
   const vehH=a.vehicles.filter(id=>(vById[id]||{}).kind==='重機');
   const el=document.createElement('div');el.className='card'+(hasDupe?' conflict':'');el.dataset.sid=s.id;
   el.innerHTML=`
-    <div class="card-head"><span class="co-dot ${s.co}"></span><span class="site-name">${esc(s.name)}</span><span class="co-tag">${COMPANIES[s.co].name}</span><button class="del-site" data-del="${s.id}" title="この日からこの現場を外す">×</button></div>
+    <div class="card-head"><span class="co-dot ${s.co}"></span><span class="site-name">${esc(s.name)}</span><span class="co-tag">${esc(coNames(s))}</span><button class="del-site" data-del="${s.id}" title="この日からこの現場を外す">×</button></div>
     ${siteMetaHtml(s)}
     <div class="content-row"><span class="cl">作業内容</span><textarea data-content="${s.id}" rows="1" placeholder="例：路盤工、掘削、間伐 …（改行で複数行）">${esc(a.content||'')}</textarea></div>
     <div class="tantou-row"><div class="row-label">⭐ 担当（現場マスタ）</div><div class="chips">
@@ -587,7 +592,7 @@ function renderGrid(){
     body+=`<tr><td class="divlab" colspan="${n+1}">車両</td></tr>`;
     body+=resourceRows(VEHICLES,'vehicle',dates);
   }else{
-    const sites=SITES.filter(s=>st.co==='all'||s.co===st.co);
+    const sites=SITES.filter(s=>siteInCo(s,st.co));
     if(!sites.length)body=`<tr><td class="rowlab">—</td><td colspan="${n}" class="empty">現場なし</td></tr>`;
     sites.forEach(s=>{
       body+=`<tr><td class="rowlab"><div class="rl-name">${esc(s.name)}</div><div class="rl-sub">${COMPANIES[s.co].name} ・ 担当 ${s.tantou.map(id=>(pById[id]||{name:id}).name).join('、')||'—'}</div>${siteMetaInline(s)?`<div class="rl-sub2">${siteMetaInline(s)}</div>`:''}</td>`;
@@ -682,7 +687,7 @@ document.getElementById('modalBg').addEventListener('click',e=>{if(e.target.id==
 document.getElementById('modalFilter').addEventListener('click',e=>{const m=e.target.closest('.mf');if(!m)return;pick.co=m.dataset.co;document.querySelectorAll('#modalFilter .mf').forEach(x=>x.classList.toggle('active',x===m));renderPick();});
 function renderPick(){
   if(pick.kind==='site'){const onDay=Object.keys(dayAssign(st.curDate));
-    const list=SITES.filter(x=>(pick.co==='all'||x.co===pick.co)&&onDay.indexOf(x.id)===-1&&x.status!=='完了');
+    const list=SITES.filter(x=>siteInCo(x,pick.co)&&onDay.indexOf(x.id)===-1&&x.status!=='完了');
     document.getElementById('pickList').innerHTML=list.map(x=>`<div class="pick" data-pid="${x.id}"><div style="flex:1"><div class="nm">${esc(x.name)}</div><div class="sub">${COMPANIES[x.co].name}</div></div></div>`).join('')||'<div class="empty">追加できる現場がありません（現場マスタに登録してください）</div>';return;}
   const isVeh=(pick.kind==='vehicleV'||pick.kind==='vehicleH');
   const master=pick.kind==='vehicleH'?VEHICLES.filter(v=>v.kind==='重機'):(pick.kind==='vehicleV'?VEHICLES.filter(v=>v.kind!=='重機'):PEOPLE);
@@ -731,7 +736,7 @@ document.getElementById('openCopy').onclick=()=>{
   if(!canEdit())return;
   const scope=st.co==='all'?'全社':COMPANIES[st.co].name;document.getElementById('copyTitle').textContent=st.curDate+' の配置をコピー';
   const day=dayAssign(st.curDate);const m=sById();
-  const cand=Object.keys(day).filter(sid=>{const s=m[sid];if(!s)return false;if(!(st.co==='all'||s.co===st.co))return false;const a=day[sid];return a.people.length||a.vehicles.length||(a.gaichu&&a.gaichu.length)||(a.unpan&&a.unpan.length)||(a.kaiso&&a.kaiso.length);});
+  const cand=Object.keys(day).filter(sid=>{const s=m[sid];if(!s)return false;if(!siteInCo(s,st.co))return false;const a=day[sid];return a.people.length||a.vehicles.length||(a.gaichu&&a.gaichu.length)||(a.unpan&&a.unpan.length)||(a.kaiso&&a.kaiso.length);});
   document.getElementById('cpSites').innerHTML=cand.length?cand.map(sid=>{const s=m[sid],a=day[sid];
     return `<label><input type="checkbox" class="cpchk" value="${sid}" checked><span>${esc(s.name)}<span class="s-sub">（${peopleLabel(a)}人 / ${a.vehicles.length}台）</span></span></label>`;}).join('')
     :'<div class="empty">この日（'+scope+'）に配置済みの現場がありません。</div>';
@@ -778,7 +783,7 @@ function renderAdmin(){
     const ed=editSiteCode?SITES.find(s=>s.id===editSiteCode):null;
     b.innerHTML=`<div class="adm-form">
       <input id="adName" class="tin" placeholder="現場名" value="${ed?esc(ed.name):''}">
-      <select id="adCo" class="tin">${coOpts(ed?ed.co:defCo)}</select>
+      <div id="adCoBox" class="co-multi">${CO_ORDER.map(c=>{const on=ed?((ed.cos&&ed.cos.length?ed.cos:[ed.co]).indexOf(c)>=0):(c===defCo);return `<label class="co-chk"><input type="checkbox" value="${c}"${on?' checked':''}>${COMPANIES[c].name}</label>`;}).join('')}</div>
       <select id="adTantou" class="tin"><option value="">担当なし</option>${PEOPLE.map(p=>`<option value="${p.id}"${ed&&ed.tantou&&ed.tantou[0]===p.id?' selected':''}>${esc(p.name)}</option>`).join('')}</select>
       <input id="adClient" class="tin" placeholder="取引先会社名" value="${ed?esc(ed.client||''):''}">
       <input id="adClientP" class="tin" placeholder="取引先担当者" value="${ed?esc(ed.clientContact||''):''}">
@@ -786,7 +791,7 @@ function renderAdmin(){
       <select id="adUnit" class="tin" style="max-width:90px">${UNITS.map(u=>`<option value="${u}"${ed&&ed.unit===u?' selected':''}>${u||'単位'}</option>`).join('')}</select>
       <input id="adNote" class="tin" placeholder="備考（任意）" value="${ed?esc(ed.note||''):''}">
       <button class="cp-go" id="adSiteGo">${ed?'更新':'＋ 現場を登録'}</button>${ed?'<button class="adm-cancel" id="adCancel">取消</button>':''}</div>
-      <div class="adm-list">${SITES.map(s=>`<div class="adm-row"><span class="nm">${esc(s.name)}</span><span class="adm-sub">${COMPANIES[s.co]?COMPANIES[s.co].name:s.co}${s.tantou&&s.tantou.length?' ・ 担当 '+esc((pById[s.tantou[0]]||{name:s.tantou[0]}).name):''}${s.client?' ・ '+esc(s.client):''}${s.qty!==''&&s.qty!=null?' ・ '+esc(s.qty)+esc(s.unit||''):''}${s.status==='完了'?' ・ 完了':''}</span><button class="adm-mini" data-edsite="${s.id}">編集</button><button class="adm-mini" data-offsite="${s.id}">無効化</button></div>`).join('')||'<div class="empty">現場なし</div>'}</div>`;
+      <div class="adm-list">${SITES.map(s=>`<div class="adm-row"><span class="nm">${esc(s.name)}</span><span class="adm-sub">${esc(coNames(s))}${s.tantou&&s.tantou.length?' ・ 担当 '+esc((pById[s.tantou[0]]||{name:s.tantou[0]}).name):''}${s.client?' ・ '+esc(s.client):''}${s.qty!==''&&s.qty!=null?' ・ '+esc(s.qty)+esc(s.unit||''):''}${s.status==='完了'?' ・ 完了':''}</span><button class="adm-mini" data-edsite="${s.id}">編集</button><button class="adm-mini" data-offsite="${s.id}">無効化</button></div>`).join('')||'<div class="empty">現場なし</div>'}</div>`;
   }else if(adminTab==='staff'){
     b.innerHTML=`<div class="adm-form"><input id="adName" class="tin" placeholder="氏名"><select id="adCo" class="tin">${coOpts(defCo)}</select><button class="cp-go" id="adStaffGo">＋ 社員を登録</button></div>
       <div class="adm-list">${PEOPLE.map(p=>`<div class="adm-row"><span class="nm">${esc(p.name)}</span><span class="adm-sub">${COMPANIES[p.co]?COMPANIES[p.co].name:p.co}</span><button class="adm-mini" data-offstaff="${p.id}">無効化</button></div>`).join('')||'<div class="empty">社員なし</div>'}</div>`;
@@ -803,9 +808,12 @@ function renderAdmin(){
 async function reloadMastersAndAdmin(){await loadMasters();renderAdmin();render();flash('保存しました');}
 document.getElementById('adminBody').addEventListener('click',async e=>{
   const id=e.target.id;
-  if(id==='adSiteGo'){const name=val('adName');if(!name)return alert('現場名を入力してください');const co=val('adCo'),tantou=val('adTantou')?[val('adTantou')]:[];
+  if(id==='adSiteGo'){const name=val('adName');if(!name)return alert('現場名を入力してください');
+    const cos=[...document.querySelectorAll('#adCoBox input:checked')].map(x=>x.value);
+    if(!cos.length)return alert('会社を1つ以上選んでください');
+    const tantou=val('adTantou')?[val('adTantou')]:[];
     let qty=val('adQty');if(qty!==''&&!isNaN(Number(qty)))qty=Number(qty);
-    const payload={name,company:co,tantou,client:val('adClient'),clientContact:val('adClientP'),qty,unit:val('adUnit'),note:val('adNote')};flash('保存中…');
+    const payload={name,companies:cos,tantou,client:val('adClient'),clientContact:val('adClientP'),qty,unit:val('adUnit'),note:val('adNote')};flash('保存中…');
     if(editSiteCode){await apiPost({action:'updateSite',code:editSiteCode,...payload});editSiteCode=null;}else{await apiPost({action:'addSite',...payload});}await reloadMastersAndAdmin();return;}
   if(id==='adCancel'){editSiteCode=null;renderAdmin();return;}
   if(id==='adStaffGo'){const name=val('adName');if(!name)return alert('氏名を入力してください');flash('保存中…');await apiPost({action:'addStaff',name,company:val('adCo')});await reloadMastersAndAdmin();return;}
