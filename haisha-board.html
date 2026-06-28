@@ -320,14 +320,23 @@ function siteMetaInline(s){const p=[];
 const CONFIG={GAS_URL:'https://script.google.com/macros/s/AKfycbzblWrGas_CcxS6mZBEvVI2Ur9LEIge9_ihC5okv4ZUBFfLcjnE_FPg8qWG19qyZvZu/exec'};
 const LINE_CHANNEL_ID='2010462402';
 const AUTH={token:localStorage.getItem('haisha_session')||'',name:localStorage.getItem('haisha_name')||''};
-let ME={role:'管理',scope:'全社',company:''};
+let ME={role:'管理',scope:'全社',company:'',companies:['nexus','forest','igarin'],viewAll:true};
 function canEdit(){return ME.role==='編集'||ME.role==='管理';}
 function canManage(){return ME.role==='管理';}
 function applyPerms(){
   document.body.classList.toggle('ro',!canEdit());
   document.body.classList.toggle('nomanage',!canManage());
-  if(ME.scope==='自社'&&ME.company){st.co=ME.company;document.body.classList.add('ownco');}
-  else document.body.classList.remove('ownco');
+  const cos=(ME.companies&&ME.companies.length)?ME.companies:null;
+  const restricted=!ME.viewAll&&cos;
+  // 会社フィルタチップ：許可された会社だけ表示（全社チップは複数許可のときのみ）
+  document.querySelectorAll('#coFilters .fchip').forEach(ch=>{
+    const co=ch.dataset.co; let show=true;
+    if(restricted){ if(co!=='all'&&cos.indexOf(co)<0)show=false; if(co==='all'&&cos.length<=1)show=false; }
+    ch.style.display=show?'':'none';
+  });
+  if(restricted&&cos.length===1){ st.co=cos[0]; document.body.classList.add('ownco'); }
+  else { document.body.classList.remove('ownco'); if(restricted&&st.co!=='all'&&cos.indexOf(st.co)<0)st.co='all'; }
+  document.querySelectorAll('#coFilters .fchip').forEach(ch=>ch.classList.toggle('active',ch.dataset.co===st.co));
   updateWho();
 }
 let PEOPLE=[],VEHICLES=[],SITES=[],GAICHU_COMPANIES=[],INPUT_USERS=[],actuals=[];
@@ -358,7 +367,7 @@ async function loadMasters(){
   let r;try{r=await api({action:'masters'});}catch(e){flash('通信エラー');return false;}
   if(authFail(r))return false;
   if(!r||!r.ok){flash('マスタ読込失敗');return false;}
-  ME=r.me||{role:'管理',scope:'全社',company:''};
+  ME=r.me||{role:'管理',scope:'全社',company:'',companies:['nexus','forest','igarin'],viewAll:true};
   PEOPLE=(r.staff||[]).map(s=>({id:s.code,name:s.name,co:normCo(s.company),dispatch:s.dispatch!==false}));
   VEHICLES=(r.kizai||[]).map(k=>({id:k.code,name:k.name,kind:k.kubun||'',co:normCo(k.company)}));
   SITES=(r.sites||[]).map(s=>({id:s.code,name:s.name,co:normCo(s.company),cos:(s.companies&&s.companies.length?s.companies:[s.company]).map(normCo),tantou:s.tantou||[],status:s.status||'',client:s.client||'',clientContact:s.clientContact||'',qty:(s.qty==null?'':s.qty),unit:s.unit||'',note:s.note||''}));
