@@ -124,6 +124,10 @@
   .gtable thead th{position:sticky;top:0;background:var(--surface2);z-index:2;color:var(--muted);font-weight:500;cursor:pointer;}
   .gtable thead th.sat{color:#7fb0ff} .gtable thead th.sun{color:#ff9d9d} .gtable thead th.wknd{background:var(--surface2)}
   .gtable .rowlab{position:sticky;left:0;background:var(--surface);text-align:left;z-index:1;min-width:160px;max-width:220px;}
+  .gtable .rowlab[draggable]{cursor:grab;} .gtable .rowlab[draggable]:active{cursor:grabbing;}
+  .drag-h{color:var(--faint);font-size:12px;margin-right:5px;user-select:none;}
+  .rowlab.rl-dragging{opacity:.45;}
+  .rowlab.rl-over{box-shadow:inset 0 3px 0 var(--accent);}
   .gtable thead .corner{position:sticky;left:0;z-index:3;background:var(--surface2);text-align:left;}
   .rowlab .rl-name{font-weight:600;color:var(--text);} .rowlab .rl-sub{font-size:10.5px;color:var(--muted);margin-top:1px;}
   .rowlab .rl-sub2{font-size:10px;color:var(--faint);margin-top:1px;line-height:1.45;white-space:normal;}
@@ -370,7 +374,7 @@ async function loadMasters(){
   ME=r.me||{role:'管理',scope:'全社',company:'',companies:['nexus','forest','igarin'],viewAll:true};
   PEOPLE=(r.staff||[]).map(s=>({id:s.code,name:s.name,co:normCo(s.company),dispatch:s.dispatch!==false}));
   VEHICLES=(r.kizai||[]).map(k=>({id:k.code,name:k.name,kind:k.kubun||'',co:normCo(k.company)}));
-  SITES=(r.sites||[]).map(s=>({id:s.code,name:s.name,co:normCo(s.company),cos:(s.companies&&s.companies.length?s.companies:[s.company]).map(normCo),tantou:s.tantou||[],status:s.status||'',client:s.client||'',clientContact:s.clientContact||'',qty:(s.qty==null?'':s.qty),unit:s.unit||'',note:s.note||''}));
+  SITES=(r.sites||[]).map(s=>({id:s.code,name:s.name,co:normCo(s.company),cos:(s.companies&&s.companies.length?s.companies:[s.company]).map(normCo),order:s.order||0,tantou:s.tantou||[],status:s.status||'',client:s.client||'',clientContact:s.clientContact||'',qty:(s.qty==null?'':s.qty),unit:s.unit||'',note:s.note||''}));
   GAICHU_COMPANIES=r.gaichu||[];
   INPUT_USERS=(r.staff||[]).map(s=>s.name);if(!INPUT_USERS.length)INPUT_USERS=['—'];
   rebuildMaps();return true;
@@ -603,7 +607,7 @@ function renderGrid(){
     const sites=SITES.filter(s=>siteInCo(s,st.co));
     if(!sites.length)body=`<tr><td class="rowlab">—</td><td colspan="${n}" class="empty">現場なし</td></tr>`;
     sites.forEach(s=>{
-      body+=`<tr><td class="rowlab"><div class="rl-name">${esc(s.name)}</div><div class="rl-sub">${COMPANIES[s.co].name} ・ 担当 ${s.tantou.map(id=>(pById[id]||{name:id}).name).join('、')||'—'}</div>${siteMetaInline(s)?`<div class="rl-sub2">${siteMetaInline(s)}</div>`:''}</td>`;
+      body+=`<tr><td class="rowlab"${canManage()?` draggable="true" data-rsite="${s.id}"`:''}>${canManage()?'<span class="drag-h" title="ドラッグで並び替え">⠿</span>':''}<div class="rl-name">${esc(s.name)}</div><div class="rl-sub">${coNames(s)} ・ 担当 ${s.tantou.map(id=>(pById[id]||{name:id}).name).join('、')||'—'}</div>${siteMetaInline(s)?`<div class="rl-sub2">${siteMetaInline(s)}</div>`:''}</td>`;
       dates.forEach(d=>{const ds=ymd(d);const a=dayAssign(ds)[s.id];const wd=d.getDay();const wknd=(wd===0||wd===6)?' wknd':'';
         if(!a){body+=detail==='bar'?`<td class="gcell qadd${wknd}" data-qadd="${s.id}|${ds}" title="クリックで作業内容を入力"></td>`:`<td class="${wknd}"></td>`;return;}
         if(detail==='bar'){const full=(a.content||'').trim();const first=full.split('\n')[0].trim();const multi=full.indexOf('\n')>=0;body+=`<td class="gcell active${wknd}" data-drill="${ds}" title="${esc(full)}"><div class="gbar ${s.co}">${esc(first?trunc(first,8)+(multi?' …':''):'—')}</div></td>`;return;}
@@ -640,6 +644,23 @@ function resourceRows(master,kind,dates){
 document.getElementById('content').addEventListener('click',e=>{const d=e.target.closest('[data-drill]');
   if(d&&st.view!=='day'){st.ret=st.view;st.curDate=d.dataset.drill;st.view='day';
     document.querySelectorAll('#viewSeg button').forEach(b=>b.classList.toggle('active',b.dataset.v==='day'));render();}});
+
+// 現場の並び替え（週/2週/月の左カラムをドラッグ・管理者のみ）
+let dragSite=null;
+const gc=document.getElementById('content');
+gc.addEventListener('dragstart',e=>{const c=e.target.closest('[data-rsite]');if(!c)return;dragSite=c.dataset.rsite;e.dataTransfer.effectAllowed='move';try{e.dataTransfer.setData('text/plain',dragSite);}catch(_){}c.classList.add('rl-dragging');});
+gc.addEventListener('dragend',()=>{dragSite=null;document.querySelectorAll('.rl-dragging,.rl-over').forEach(x=>x.classList.remove('rl-dragging','rl-over'));});
+gc.addEventListener('dragover',e=>{const c=e.target.closest('[data-rsite]');if(!c||!dragSite)return;e.preventDefault();document.querySelectorAll('.rl-over').forEach(x=>x.classList.remove('rl-over'));if(c.dataset.rsite!==dragSite)c.classList.add('rl-over');});
+gc.addEventListener('drop',e=>{const c=e.target.closest('[data-rsite]');if(!c||!dragSite)return;e.preventDefault();const tgt=c.dataset.rsite,src=dragSite;c.classList.remove('rl-over');dragSite=null;if(tgt!==src)reorderSiteTo(src,tgt);});
+async function reorderSiteTo(src,tgt){
+  const codes=SITES.map(s=>s.id);const si=codes.indexOf(src);if(si<0)return;
+  codes.splice(si,1);const ni=codes.indexOf(tgt);if(ni<0)return;codes.splice(ni,0,src);
+  flash('並び替え中…');
+  let r;try{r=await apiPost({action:'reorderSites',codes});}catch(e){flash('並び替え失敗');return;}
+  if(authFail(r))return;
+  if(r&&r.status==='forbidden'){flash('並び替えは管理権限が必要です');return;}
+  await loadMasters();render();flash('並び替えました');
+}
 document.getElementById('content').addEventListener('click',e=>{
   const q=e.target.closest('[data-qadd]');if(!q||st.view!=='month'||q.querySelector('input')||!canEdit())return;
   const [sid,ds]=q.dataset.qadd.split('|');q.classList.add('editing');q.innerHTML='<input class="qadd-in" placeholder="作業内容">';
