@@ -347,6 +347,7 @@ let PEOPLE=[],VEHICLES=[],SITES=[],GAICHU_COMPANIES=[],INPUT_USERS=[],actuals=[]
 const board={}, pstatus={};
 
 const st={curDate:new Date().toISOString().slice(0,10),co:'all',view:'day',rowMode:'site',ret:null};
+let lastPlanLoad=Date.now();
 let pById={},vById={};
 const sById=()=>Object.fromEntries(SITES.map(s=>[s.id,s]));
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
@@ -387,6 +388,7 @@ async function loadPlan(start,end){
   let r;try{r=await api({action:'plan',start,end});}catch(e){flash('通信エラー');return;}
   if(authFail(r))return;
   if(!r||!r.ok){flash('予定読込失敗');return;}
+  lastPlanLoad=Date.now();
   for(let d=new Date(start);d<=new Date(end);d=addDays(d,1)){const ds=ymd(d);delete board[ds];delete pstatus[ds];}
   const ensure=(ds,sid)=>{board[ds]=board[ds]||{};board[ds][sid]=board[ds][sid]||{people:[],vehicles:[],gaichu:[],content:'',unpan:[],kaiso:[]};return board[ds][sid];};
   (r.siteDays||[]).forEach(x=>{ensure(x.date,x.siteCode).content=x.content||'';});
@@ -399,7 +401,7 @@ async function loadPlan(start,end){
   (r.status||[]).forEach(x=>{pstatus[x.date]=pstatus[x.date]||{};pstatus[x.date][x.staffCode]=x.status;});
   actuals=r.actuals||[];
 }
-async function saveDay(date){
+function dayPayload(date){
   const day=board[date]||{},stat=pstatus[date]||{},siteDays=[],assign=[],trans=[];
   Object.keys(day).forEach(sid=>{const a=day[sid];
     siteDays.push({siteCode:sid,content:a.content||''});
@@ -409,10 +411,26 @@ async function saveDay(date){
     (a.unpan||[]).forEach(t=>trans.push({siteCode:sid,type:'運搬',dir:t.dir,time:t.time,vehicle:t.vehicle,driver:t.driver,item:t.item}));
     (a.kaiso||[]).forEach(t=>trans.push({siteCode:sid,type:'回送',dir:t.dir,time:t.time,vehicle:t.vehicle,driver:t.driver,item:t.item}));});
   const statuses=Object.keys(stat).filter(p=>stat[p]).map(p=>({staffCode:p,status:stat[p]}));
+  return {date:date,siteDays:siteDays,assign:assign,trans:trans,status:statuses};
+}
+const saveTimers={};
+function saveDay(date){  // 連続編集を600msまとめてから送信（衝突と回数を減らす）
+  clearTimeout(saveTimers[date]);
+  saveTimers[date]=setTimeout(()=>{delete saveTimers[date];saveDayNow(date);},600);
+}
+document.addEventListener('visibilitychange',()=>{  // 画面を離れる時は待たずに送信／戻った時は最新化
+  if(document.visibilityState==='hidden'){Object.keys(saveTimers).forEach(d=>{clearTimeout(saveTimers[d]);delete saveTimers[d];saveDayNow(d);});}
+  else if(document.visibilityState==='visible'&&Date.now()-lastPlanLoad>60000&&!Object.keys(saveTimers).length){go();}
+});
+async function saveDayNow(date,retried){
   flash('保存中…');
-  let r;try{r=await apiPost({action:'savePlan',date:date,user:currentUser(),siteDays:siteDays,assign:assign,trans:trans,status:statuses});}catch(e){flash('保存失敗(通信)');return;}
+  let r;try{r=await apiPost({action:'savePlan',user:currentUser(),...dayPayload(date)});}catch(e){flash('保存失敗(通信)');return;}
   if(authFail(r))return;
   if(r&&r.status==='forbidden'){flash('権限がありません（閲覧のみ）');return;}
+  if(r&&r.status==='busy'){
+    if(!retried){flash('混雑中…再試行します');setTimeout(()=>saveDayNow(date,1),1500);return;}
+    flash('保存できませんでした（混雑）。もう一度編集してください');return;
+  }
   flash(r&&r.ok?'保存しました':'保存失敗');
 }
 function commitDay(date){saveDay(date);render();}
@@ -779,11 +797,25 @@ document.getElementById('cpGo').onclick=()=>{
   if(!ids.length){alert('コピーする現場を選んでください');return;}
   const start=document.getElementById('cpStart').value,end=document.getElementById('cpEnd').value;
   if(!start||!end||end<start){alert('期間が正しくありません');return;}
-  const noSun=document.getElementById('cpNoSun').checked,ow=document.getElementById('cpOverwrite').checked;const srcDay=dayAssign(st.curDate);let cnt=0;const touched=[];
-  for(let d=new Date(start);d<=new Date(end);d=addDays(d,1)){const ds=ymd(d);if(noSun&&d.getDay()===0)continue;if(ds===st.curDate)continue;
-    board[ds]=board[ds]||{};ids.forEach(sid=>{if(ow)delete board[ds][sid];
-      board[ds][sid]={people:[...srcDay[sid].people],vehicles:[...srcDay[sid].vehicles],content:srcDay[sid].content||'',gaichu:(srcDay[sid].gaichu||[]).map(g=>({...g})),unpan:(srcDay[sid].unpan||[]).map(t=>({...t})),kaiso:(srcDay[sid].kaiso||[]).map(t=>({...t}))};});touched.push(ds);cnt++;}
-  closeCopy();render();touched.forEach(saveDay);alert(cnt+'日分にコピーしました。');};
+  const noSun=document.getElementById('cpNoSun').checked,ow=document.getElementById('cpOverwrite').checked;
+  const srcDay=JSON.parse(JSON.stringify(dayAssign(st.curDate)));  // コピー元を先に確定
+  closeCopy();
+  (async()=>{
+    flash('コピー先の最新を取得中…');
+    try{await loadPlan(start,end);}catch(e){flash('コピー中止（コピー先の読込に失敗）');return;}  // 未ロード日の丸ごと上書き事故を防止
+    let cnt=0;const touched=[];
+    for(let d=new Date(start);d<=new Date(end);d=addDays(d,1)){const ds=ymd(d);if(noSun&&d.getDay()===0)continue;if(ds===st.curDate)continue;
+      board[ds]=board[ds]||{};ids.forEach(sid=>{if(!srcDay[sid])return;if(ow)delete board[ds][sid];
+        board[ds][sid]={people:[...srcDay[sid].people],vehicles:[...srcDay[sid].vehicles],content:srcDay[sid].content||'',gaichu:(srcDay[sid].gaichu||[]).map(g=>({...g})),unpan:(srcDay[sid].unpan||[]).map(t=>({...t})),kaiso:(srcDay[sid].kaiso||[]).map(t=>({...t}))};});touched.push(ds);cnt++;}
+    render();
+    flash('コピーを保存中…（'+cnt+'日分）');
+    const days=touched.map(dayPayload);
+    let r;try{r=await apiPost({action:'savePlanBulk',user:currentUser(),days:days,sites:ids});}catch(e){flash('コピー保存失敗(通信)。もう一度実行してください');return;}
+    if(authFail(r))return;
+    if(r&&r.status==='forbidden'){flash('権限がありません');return;}
+    if(r&&r.status==='busy'){flash('混雑中で保存できませんでした。少し待ってもう一度実行してください');return;}
+    flash(r&&r.ok?(cnt+'日分コピーして保存しました'):'コピー保存失敗。もう一度実行してください');
+  })();};
 
 // ===== 登録・管理（マスタ） =====
 let adminTab='site',editSiteCode=null;
