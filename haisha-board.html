@@ -4,14 +4,14 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="theme-color" content="#0e1116">
-<link rel="manifest" href="manifest.webmanifest">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="配車ボード">
 <link rel="apple-touch-icon" href="icon-192.png">
 <link rel="icon" href="icon-192.png">
-<title>配員・配車ボード ｜ ECPGROUP</title>
+<title>配員・配車ボード</title>
 <style>
   :root{
     --bg:#0e1116;--surface:#171b22;--surface2:#1d2331;--line:#2a3140;
@@ -216,7 +216,7 @@
 <div id="authBg" class="auth-bg"><div class="auth-card"></div></div>
 <header>
   <div class="bar">
-    <div class="brand">配員・配車ボード <small>ECPGROUP</small></div>
+    <div class="brand">配員・配車ボード <small>ECPGROUP</small> </div>
     <div class="seg" id="viewSeg"><button data-v="day" class="active">日</button><button data-v="week">週</button><button data-v="2week">2週</button><button data-v="month">月</button></div>
     <div class="spacer"></div>
     <div class="date-nav"><button id="prevBtn">‹</button><input type="date" id="dateInput"><button id="nextBtn">›</button></div>
@@ -321,9 +321,15 @@ function siteMetaInline(s){const p=[];
   if(s.qty!==''&&s.qty!=null)p.push('📐'+esc(s.qty)+esc(s.unit||''));
   if(s.note)p.push('📝'+esc(trunc(s.note,12)));
   return p.join('　');}
-const CONFIG={GAS_URL:'https://script.google.com/macros/s/AKfycbzblWrGas_CcxS6mZBEvVI2Ur9LEIge9_ihC5okv4ZUBFfLcjnE_FPg8qWG19qyZvZu/exec'};
-const LINE_CHANNEL_ID='2010462402';
-const AUTH={token:localStorage.getItem('haisha_session')||'',name:localStorage.getItem('haisha_name')||''};
+const SBC={URL:'https://awjcguqlrznvdqbuuhpa.supabase.co',
+           ANON:'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF3amNndXFscnpudmRxYnV1aHBhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODg3MjcwMjksImV4cCI6MjEwNDMwMzAyOX0.NM2WoTto-lj4T-yJwNi9u7oxPyEfpX87p3dEHTHziig'};
+let SB_JWT=localStorage.getItem('haisha_sb_jwt')||'';
+function makeClient(){return window.supabase.createClient(SBC.URL,SBC.ANON,SB_JWT?{global:{headers:{Authorization:'Bearer '+SB_JWT}}}:{});}
+let sb=makeClient();
+const AUTH={token:'',name:localStorage.getItem('haisha_sb_name')||''};
+let SB_STAFF_ALL=[];
+let SB_ME_CODE=localStorage.getItem('haisha_sb_me')||'';
+function jwtOk(){if(!SB_JWT)return false;try{const p=JSON.parse(atob(SB_JWT.split('.')[1].replace(/-/g,'+').replace(/_/g,'/')));return p.exp*1000>Date.now()+60000;}catch(e){return false;}}
 let ME={role:'管理',scope:'全社',company:'',companies:['nexus','forest','igarin'],viewAll:true};
 function canEdit(){return ME.role==='編集'||ME.role==='管理';}
 function canManage(){return ME.role==='管理';}
@@ -365,9 +371,135 @@ function updateWho(){const box=document.getElementById('whoBox');if(!box)return;
   else{box.innerHTML=`入力者 <select id="inputUser">${INPUT_USERS.map(u=>`<option>${esc(u)}</option>`).join('')}</select>`;}}
 function currentUser(){if(AUTH.name)return AUTH.name;const el=document.getElementById('inputUser');return el?el.value:'';}
 function flash(m){const el=document.getElementById('flash');if(el)el.textContent=m||'';}
-async function api(params){params.token=AUTH.token;const r=await fetch(CONFIG.GAS_URL+'?'+new URLSearchParams(params));return r.json();}
-async function apiPost(payload){if(payload.token===undefined)payload.token=AUTH.token;const r=await fetch(CONFIG.GAS_URL,{method:'POST',body:JSON.stringify(payload)});return r.json();}
-function authFail(r){if(r&&r.status==='unauth'){AUTH.token='';localStorage.removeItem('haisha_session');showLogin();return true;}return false;}
+async function api(p){return sbApi(p);}
+async function apiPost(p){return sbApi(p);}
+function authFail(r){if(r&&r.status==='unauth'){showLogin();return true;}return false;}
+function sbFail(e){return {ok:false,error:String((e&&e.message)||e)};}
+function parseCosJS(v){const a=String(v==null?'':v).trim();if(!a)return [];const out=[];a.split(/[,、\/|\s]+/).forEach(x=>{if(!x)return;const c=normCo(x);if(!out.includes(c))out.push(c);});return out;}
+function sbMe(row){const own=normCo(row.company);const raw=String(row.scope||'').trim();const viewAll=raw==='全社';
+  let companies=viewAll?['nexus','forest','igarin']:((raw===''||raw==='自社')?[own]:parseCosJS(raw));
+  if(!companies.length)companies=[own];
+  return {name:row.name,company:own,role:(String(row.role||'').trim()||'閲覧'),scope:raw||'自社',companies:companies,viewAll:viewAll};}
+function sbMyRow(){return SB_STAFF_ALL.find(x=>x.code===SB_ME_CODE)||null;}
+async function sbApi(p){
+  if(!jwtOk())return {ok:false,status:'unauth'};
+  try{
+    switch(p.action){
+      case 'masters': return await sbMasters();
+      case 'plan': return await sbPlan(p.start,p.end);
+      case 'savePlan': {const {error}=await sb.rpc('save_plan',{days:[{date:p.date,siteDays:p.siteDays,assign:p.assign,trans:p.trans,status:p.status}],site_targets:null,editor:p.user||''});return error?sbFail(error):{ok:true};}
+      case 'savePlanBulk': {const {error}=await sb.rpc('save_plan',{days:p.days,site_targets:(p.sites&&p.sites.length)?p.sites:null,editor:p.user||''});return error?sbFail(error):{ok:true};}
+      case 'addSite': return await sbAddSite(p);
+      case 'updateSite': return await sbUpdateSite(p);
+      case 'reorderSites': {const {error}=await sb.from('sites').upsert(p.codes.map((c,i)=>({code:c,ord:i+1})));return error?sbFail(error):{ok:true};}
+      case 'addStaff': return await sbAddStaff(p);
+      case 'addKizai': return await sbAddKizai(p);
+      case 'addGaichu': {const {error}=await sb.from('gaichu').upsert({name:p.name,active:true});return error?sbFail(error):{ok:true};}
+      case 'setActive': return await sbSetActive(p);
+      case 'loginStatus': return {ok:true,list:[]};
+      default: return {ok:false,error:'unknown action: '+p.action};
+    }
+  }catch(e){return sbFail(e);}
+}
+async function sbMasters(){
+  const [s1,s2,s3,s4]=await Promise.all([
+    sb.from('sites').select('*').eq('active',true).order('ord').order('code').range(0,9999),
+    sb.from('staff').select('*').eq('active',true).order('ord').order('code').range(0,9999),
+    sb.from('kizai').select('*').eq('active',true).order('code').range(0,9999),
+    sb.from('gaichu').select('name').eq('active',true).order('name').range(0,9999)
+  ]);
+  for(const r of [s1,s2,s3,s4])if(r.error)return sbFail(r.error);
+  SB_STAFF_ALL=s2.data;
+  const meRow=sbMyRow();const me=meRow?sbMe(meRow):null;
+  let sites=s1.data.map(x=>({code:x.code,name:x.name,company:(x.companies&&x.companies[0])||'nexus',companies:x.companies&&x.companies.length?x.companies:['nexus'],order:x.ord||0,tantou:x.tantou||[],status:x.status||'',client:x.client||'',clientContact:x.client_contact||'',qty:x.qty||'',unit:x.unit||'',note:x.note||''}));
+  let staff=s2.data.map(x=>({code:x.code,name:x.name,company:x.company,order:x.ord||0,dispatch:x.dispatch!==false}));
+  let kizai=s3.data.map(x=>({code:x.code,kubun:x.kind||'',name:x.name,company:x.company}));
+  if(me&&!me.viewAll){
+    sites=sites.filter(z=>z.companies.some(c=>me.companies.includes(normCo(c))));
+    staff=staff.filter(z=>me.companies.includes(normCo(z.company)));
+    kizai=kizai.filter(z=>me.companies.includes(normCo(z.company)));
+  }
+  return {ok:true,sites:sites,staff:staff,kizai:kizai,gaichu:s4.data.map(g=>g.name),me:me,auth:true};
+}
+async function sbPlan(start,end){
+  const q=t=>sb.from(t).select('*').gte('d',start).lte('d',end).range(0,9999);
+  const [a,b,c,d]=await Promise.all([q('plan_site_day'),q('plan_assign'),q('plan_trans'),q('staff_status')]);
+  for(const r of [a,b,c,d])if(r.error)return sbFail(r.error);
+  const meRow=sbMyRow();const me=meRow?sbMe(meRow):null;
+  const known=(me&&!me.viewAll&&SITES.length)?new Set(SITES.map(z=>z.id)):null;
+  const okS=sc=>!known||known.has(sc);
+  return {ok:true,
+    siteDays:a.data.filter(x=>okS(x.site_code)).map(x=>({date:x.d,siteCode:x.site_code,content:x.content||''})),
+    assign:b.data.filter(x=>okS(x.site_code)).map(x=>({date:x.d,siteCode:x.site_code,kind:x.kind,target:x.target,count:x.count||''})),
+    trans:c.data.filter(x=>okS(x.site_code)).map(x=>({date:x.d,siteCode:x.site_code,type:x.type,dir:x.dir||'',time:x.t||'',vehicle:x.vehicle||'',driver:x.driver||'',item:x.item||''})),
+    status:d.data.map(x=>({date:x.d,staffCode:x.staff_code,status:x.status||''})),
+    actuals:[]};
+}
+async function sbAddSite(p){
+  const cos=(p.companies&&p.companies.length)?p.companies.map(normCo):[normCo(p.company||'nexus')];
+  const pre=cos[0]==='forest'?'F':(cos[0]==='igarin'?'I':'N');
+  const year=new Date().getFullYear();
+  const {data:ex,error:e1}=await sb.from('sites').select('code').like('code',pre+'-'+year+'-%');
+  if(e1)return sbFail(e1);
+  let max=0;(ex||[]).forEach(r=>{const m=String(r.code).match(/-(\d+)$/);if(m)max=Math.max(max,Number(m[1]));});
+  const code=pre+'-'+year+'-'+String(max+1).padStart(3,'0');
+  const {error}=await sb.from('sites').insert({code:code,name:p.name||'',companies:cos,tantou:p.tantou||[],status:'',client:p.client||'',client_contact:p.clientContact||'',qty:String(p.qty==null?'':p.qty),unit:p.unit||'',note:p.note||'',ord:9999,active:true});
+  return error?sbFail(error):{ok:true,code:code};
+}
+async function sbUpdateSite(p){
+  const u={};if(p.name!==undefined)u.name=p.name;
+  if(p.companies!==undefined)u.companies=p.companies.map(normCo);
+  if(p.tantou!==undefined)u.tantou=p.tantou;
+  if(p.client!==undefined)u.client=p.client;
+  if(p.clientContact!==undefined)u.client_contact=p.clientContact;
+  if(p.qty!==undefined)u.qty=String(p.qty==null?'':p.qty);
+  if(p.unit!==undefined)u.unit=p.unit;
+  if(p.note!==undefined)u.note=p.note;
+  const {error}=await sb.from('sites').update(u).eq('code',p.code);
+  return error?sbFail(error):{ok:true};
+}
+async function sbAddStaff(p){
+  const co=normCo(p.company||'nexus');
+  const pre=co==='forest'?'F':(co==='igarin'?'I':'N');
+  const {data:ex,error:e1}=await sb.from('staff').select('code').like('code',pre+'%');
+  if(e1)return sbFail(e1);
+  let max=0;(ex||[]).forEach(r=>{const m=String(r.code).match(new RegExp('^'+pre+'(\\d+)$'));if(m)max=Math.max(max,Number(m[1]));});
+  const code=pre+String(max+1).padStart(2,'0');
+  const {error}=await sb.from('staff').insert({code:code,name:p.name||'',company:co,active:true,dispatch:true,ord:9999});
+  return error?sbFail(error):{ok:true,code:code};
+}
+async function sbAddKizai(p){
+  const {data:ex,error:e1}=await sb.from('kizai').select('code');
+  if(e1)return sbFail(e1);
+  let max=0;(ex||[]).forEach(r=>{const m=String(r.code).match(/K(\d+)/);if(m)max=Math.max(max,Number(m[1]));});
+  const code='K'+String(max+1).padStart(3,'0');
+  const {error}=await sb.from('kizai').insert({code:code,name:p.name||'',kind:(p.kubun==='重機'?'重機':'車両'),company:normCo(p.company||'nexus'),active:true});
+  return error?sbFail(error):{ok:true,code:code};
+}
+async function sbSetActive(p){
+  const key=String(p.code||p.name||'').trim();
+  if(p.type==='site'){const {error}=await sb.from('sites').update({active:!!p.active,status:p.active?'':'完了'}).eq('code',key);return error?sbFail(error):{ok:true};}
+  if(p.type==='staff'){const {error}=await sb.from('staff').update({active:!!p.active}).eq('code',key);return error?sbFail(error):{ok:true};}
+  if(p.type==='kizai'){const {error}=await sb.from('kizai').update({active:!!p.active}).eq('code',key);return error?sbFail(error):{ok:true};}
+  if(p.type==='gaichu'){const {error}=await sb.from('gaichu').update({active:!!p.active}).eq('name',key);return error?sbFail(error):{ok:true};}
+  return {ok:false,error:'bad type'};
+}
+let rtChan=null,rtTimer=null;
+function startRealtime(){
+  if(rtChan)return;
+  try{sb.realtime.setAuth(SB_JWT);}catch(e){}
+  rtChan=sb.channel('plan-sync');
+  ['plan_site_day','plan_assign','plan_trans','staff_status'].forEach(t=>{
+    rtChan=rtChan.on('postgres_changes',{event:'*',schema:'public',table:t},()=>queueRtReload());
+  });
+  rtChan.subscribe();
+}
+function queueRtReload(){clearTimeout(rtTimer);rtTimer=setTimeout(async()=>{
+  if(Object.keys(saveTimers).length){queueRtReload();return;}
+  const ae=document.activeElement;
+  if(ae&&(ae.tagName==='TEXTAREA'||ae.tagName==='INPUT')&&document.getElementById('content').contains(ae)){queueRtReload();return;}
+  const rg=visibleRange();await loadPlan(rg.start,rg.end);render();
+},700);}
 async function loadMasters(){
   let r;try{r=await api({action:'masters'});}catch(e){flash('通信エラー');return false;}
   if(authFail(r))return false;
@@ -439,25 +571,23 @@ async function init(){
   const qs=new URLSearchParams(location.search);
   if(qs.get('code')){
     flash('ログイン処理中…');
-    let r;try{r=await apiPost({action:'lineLogin',code:qs.get('code'),redirectUri:redirectUri(),token:''});}catch(e){r=null;}
+    let r;try{r=await edgeAuth({action:'login',code:qs.get('code'),redirectUri:location.origin+location.pathname});}catch(e){r=null;}
     history.replaceState({},'',location.pathname);
-    if(r&&r.ok){setSession(r);}
+    if(r&&r.ok){setSbSession(r);await startBoard();return;}
     else if(r&&r.status==='unlinked'){showLink(r.userId,r.name,r.candidates||[]);return;}
-    else if(r&&r.status==='denied'){showDenied();return;}
     else{showLogin('ログイン失敗：'+((r&&(r.error||r.status))||'サーバー応答なし'));return;}
   }
-  flash('読み込み中…');
-  const rg=visibleRange();
-  const [mOk]=await Promise.all([loadMasters(),loadPlan(rg.start,rg.end)]);
-  if(!mOk)return;          // 未認証ならshowLoginが出ている
-  hideLogin();render();flash('');
+  if(!jwtOk()){showLogin();return;}
+  await startBoard();
 }
 function redirectUri(){return location.origin+location.pathname;}
-function setSession(r){AUTH.token=r.token;AUTH.name=r.name||'';localStorage.setItem('haisha_session',AUTH.token);localStorage.setItem('haisha_name',AUTH.name);}
-function lineLoginUrl(){const state=Math.random().toString(36).slice(2);
-  const p=new URLSearchParams({response_type:'code',client_id:LINE_CHANNEL_ID,redirect_uri:redirectUri(),state:state,scope:'openid profile'});
-  return 'https://access.line.me/oauth2/v2.1/authorize?'+p.toString();}
 function authCard(){return document.getElementById('authBg').querySelector('.auth-card');}
+function lineLoginUrl(){const p=new URLSearchParams({response_type:'code',client_id:'2010462402',redirect_uri:location.origin+location.pathname,state:Math.random().toString(36).slice(2),scope:'openid profile'});
+  return 'https://access.line.me/oauth2/v2.1/authorize?'+p.toString();}
+async function edgeAuth(body){const r=await fetch(SBC.URL+'/functions/v1/line-login',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+SBC.ANON,'apikey':SBC.ANON},body:JSON.stringify(body)});return r.json();}
+function setSbSession(r){SB_JWT=r.token;AUTH.name=r.name||'';SB_ME_CODE=r.staffCode||'';
+  localStorage.setItem('haisha_sb_jwt',SB_JWT);localStorage.setItem('haisha_sb_name',AUTH.name);localStorage.setItem('haisha_sb_me',SB_ME_CODE);
+  sb=makeClient();}
 function showLogin(msg){authCard().innerHTML=
   `<div class="auth-logo">🚚</div><div class="auth-title">配員・配車ボード</div><div class="auth-sub">ECPGROUP 社内用</div>
    ${msg?`<div class="auth-msg">${esc(msg)}</div>`:''}
@@ -474,20 +604,22 @@ function showLink(userId,name,cands){authCard().innerHTML=
   document.getElementById('linkGo').onclick=async()=>{
     const staffCode=document.getElementById('linkStaff').value,linkCode=document.getElementById('linkCode').value.trim();
     if(!staffCode){document.getElementById('linkMsg').textContent='名前を選んでください';return;}
-    let r;try{r=await apiPost({action:'lineLink',userId:userId,staffCode:staffCode,linkCode:linkCode,lineName:name,token:''});}catch(e){r=null;}
-    if(r&&r.ok){setSession(r);hideLogin();flash('読み込み中…');const ok=await loadMasters();if(ok)await go();}
+    let r;try{r=await edgeAuth({action:'link',userId:userId,staffCode:staffCode,linkCode:linkCode,lineName:name});}catch(e){r=null;}
+    if(r&&r.ok){setSbSession(r);await startBoard();}
     else if(r&&r.status==='badcode')document.getElementById('linkMsg').textContent='初回コードが違います';
     else if(r&&r.status==='denied')document.getElementById('linkMsg').textContent='この社員は無効です';
     else if(r&&(r.status==='taken'||r.status==='occupied'))document.getElementById('linkMsg').textContent=r.error||'既に紐付け済みです。管理者に連絡してください。';
-    else document.getElementById('linkMsg').textContent='登録に失敗しました';
+    else document.getElementById('linkMsg').textContent='登録に失敗しました：'+((r&&r.error)||'通信エラー');
   };}
-function showDenied(){authCard().innerHTML=
-  `<div class="auth-title">アクセス権がありません</div><div class="auth-sub">この配車ボードはECPGROUPの在籍社員専用です。担当者にご連絡ください。</div>
-   <button class="line-btn" id="lineGo2">別のLINEでログイン</button>`;
-  document.getElementById('lineGo2').onclick=()=>{location.href=lineLoginUrl();};
-  document.getElementById('authBg').classList.add('show');}
+async function startBoard(){
+  hideLogin();flash('読み込み中…');
+  const rg=visibleRange();
+  const [mOk]=await Promise.all([loadMasters(),loadPlan(rg.start,rg.end)]);
+  if(!mOk)return;
+  render();flash('');startRealtime();
+}
 function hideLogin(){document.getElementById('authBg').classList.remove('show');}
-async function doLogout(){try{await apiPost({action:'logout',token:AUTH.token});}catch(e){}AUTH.token='';localStorage.removeItem('haisha_session');localStorage.removeItem('haisha_name');location.reload();}
+async function doLogout(){SB_JWT='';['haisha_sb_jwt','haisha_sb_me','haisha_sb_name'].forEach(k=>localStorage.removeItem(k));location.reload();}
 
 function dayAssign(date){return board[date]||{};}
 function getStatus(date,pid){return (pstatus[date]||{})[pid]||'';}
@@ -890,7 +1022,8 @@ document.getElementById('adminBody').addEventListener('click',async e=>{
 init();
 </script>
 <script>
-if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('sw.js').catch(function(){});});}
+
 </script>
+<script>if('serviceWorker' in navigator){navigator.serviceWorker.getRegistrations().then(rs=>rs.forEach(r=>r.unregister())).catch(()=>{});}</script>
 </body>
 </html>
