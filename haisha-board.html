@@ -203,6 +203,17 @@
   .co-chk{display:inline-flex;align-items:center;gap:5px;background:var(--surface2);border:1px solid var(--line);border-radius:8px;padding:6px 10px;font-size:13px;cursor:pointer;}
   .co-chk input{accent-color:var(--accent);}
   .adm-group:first-child{margin-top:0;}
+  .tools{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:6px 12px 2px;}
+  .tool-search{position:relative;display:inline-flex;align-items:center;}
+  .tool-search input{background:var(--surface2);border:1px solid var(--line);color:var(--text);border-radius:8px;padding:6px 26px 6px 10px;font-size:13px;width:190px;}
+  .tool-search button{position:absolute;right:4px;background:none;border:none;color:var(--muted);font-size:14px;cursor:pointer;display:none;}
+  .tool-search.has button{display:block;}
+  .tool-sel{background:var(--surface2);border:1px solid var(--line);color:var(--text);border-radius:8px;padding:6px 8px;font-size:12px;}
+  .tool-chk{font-size:12px;color:var(--muted);display:inline-flex;align-items:center;gap:5px;cursor:pointer;}
+  .tool-chk input{accent-color:var(--accent);}
+  .gtable tr.done td{background:rgba(214,64,64,.10);}
+  .gtable tr.done .rl-name::after,.card.done .site-name::after{content:"完了";font-size:10px;font-weight:700;color:#ff8a8a;background:rgba(214,64,64,.18);border:1px solid rgba(214,64,64,.4);border-radius:999px;padding:1px 6px;margin-left:6px;vertical-align:middle;}
+  .card.done{background:rgba(214,64,64,.08);border-color:rgba(214,64,64,.35);}
   .adm-row[draggable]{cursor:grab;}
   .adm-row.rl-dragging{opacity:.45;}
   .adm-row.rl-over{box-shadow:inset 0 2px 0 var(--accent);}
@@ -233,6 +244,11 @@
     <div class="seg rowtoggle" id="rowToggle"><button data-rm="site" class="active">現場視点</button><button data-rm="resource">人・車視点</button><button data-rm="trans">運搬・回送</button></div>
     <button class="copy-btn" id="openCopy">📋 この日をコピー</button>
     <button class="copy-btn" id="openAdmin" style="margin-left:8px">⚙ 登録・管理</button>
+  </div>
+  <div class="tools" id="toolsBar">
+    <span class="tool-search"><input id="siteQ" placeholder="🔍 現場名で検索" autocomplete="off"><button id="siteQClear" title="クリア">×</button></span>
+    <select id="sortSel" class="tool-sel"><option value="manual">並び：手動（⠿）</option><option value="name">並び：名前順</option><option value="co">並び：会社→名前</option></select>
+    <label class="tool-chk"><input type="checkbox" id="showDone">完了も表示</label>
   </div>
 </header>
 
@@ -357,6 +373,16 @@ const board={}, pstatus={};
 
 const st={curDate:new Date().toISOString().slice(0,10),co:'all',view:'day',rowMode:'site',ret:null};
 let lastPlanLoad=Date.now();
+st.q='';st.sort=localStorage.getItem('haisha_sort')||'manual';st.showDone=localStorage.getItem('haisha_showdone')==='1';
+function sortSites(arr){
+  const a=arr.slice();
+  if(st.sort==='name')a.sort((x,y)=>String(x.name).localeCompare(String(y.name),'ja'));
+  else if(st.sort==='co')a.sort((x,y)=>{const cx=CO_ORDER.indexOf(x.co),cy=CO_ORDER.indexOf(y.co);return cx!==cy?cx-cy:String(x.name).localeCompare(String(y.name),'ja');});
+  return a;
+}
+function matchQ(s){return !st.q||String(s.name||'').toLowerCase().includes(st.q.toLowerCase());}
+function siteHasData(sid,dates){return dates.some(d=>{const a=(board[ymd(d)]||{})[sid];return a&&((a.people||[]).length||(a.vehicles||[]).length||(a.gaichu||[]).length||(a.unpan||[]).length||(a.kaiso||[]).length||(a.content||'').trim());});}
+function visibleSite(s,dates){if(!matchQ(s))return false;if(s.status==='完了'&&!st.showDone&&!(dates&&siteHasData(s.id,dates)))return false;return true;}
 let pById={},vById={};
 const sById=()=>Object.fromEntries(SITES.map(s=>[s.id,s]));
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
@@ -396,6 +422,7 @@ async function sbApi(p){
       case 'updateSite': return await sbUpdateSite(p);
       case 'reorderSites': {const {error}=await sb.from('sites').upsert(p.codes.map((c,i)=>({code:c,ord:i+1})));return error?sbFail(error):{ok:true};}
       case 'reorderKizai': {const {error}=await sb.from('kizai').upsert(p.codes.map((c,i)=>({code:c,ord:i+1})));return error?sbFail(error):{ok:true};}
+      case 'setSiteStatus': {const {error}=await sb.from('sites').update({status:p.status||''}).eq('code',p.code);return error?sbFail(error):{ok:true};}
       case 'setPerm': {const {error}=await sb.from('staff').update({role:p.role||'',scope:p.scope||''}).eq('code',p.code);return error?sbFail(error):{ok:true};}
       case 'addStaff': return await sbAddStaff(p);
       case 'addKizai': return await sbAddKizai(p);
@@ -483,7 +510,7 @@ async function sbAddKizai(p){
 }
 async function sbSetActive(p){
   const key=String(p.code||p.name||'').trim();
-  if(p.type==='site'){const {error}=await sb.from('sites').update({active:!!p.active,status:p.active?'':'完了'}).eq('code',key);return error?sbFail(error):{ok:true};}
+  if(p.type==='site'){const {error}=await sb.from('sites').update({active:!!p.active,status:p.active?'':'非表示'}).eq('code',key);return error?sbFail(error):{ok:true};}
   if(p.type==='staff'){const {error}=await sb.from('staff').update({active:!!p.active}).eq('code',key);return error?sbFail(error):{ok:true};}
   if(p.type==='kizai'){const {error}=await sb.from('kizai').update({active:!!p.active}).eq('code',key);return error?sbFail(error):{ok:true};}
   if(p.type==='gaichu'){const {error}=await sb.from('gaichu').update({active:!!p.active}).eq('name',key);return error?sbFail(error):{ok:true};}
@@ -670,7 +697,9 @@ function renderDay(){
     banner.innerHTML='⚠ <b>ダブルブッキング：</b>'+parts.join(' / ')+' が同じ日に複数の現場へ。';banner.classList.add('show');
   }else banner.classList.remove('show');
   const host=document.getElementById('content');host.innerHTML='';
-  const list=sitesOnDay(st.curDate);
+  const dayDates=[new Date(st.curDate)];
+  let list=sitesOnDay(st.curDate).filter(o=>visibleSite(o.s,dayDates));
+  if(st.sort!=='manual'){const order=sortSites(list.map(o=>o.s)).map(x=>x.id);list.sort((a,b)=>order.indexOf(a.s.id)-order.indexOf(b.s.id));}
   if(st.co==='all'){
     CO_ORDER.forEach(co=>{const rows=list.filter(o=>o.s.co===co);if(!rows.length)return;
       const gh=document.createElement('div');gh.className='group-head';
@@ -691,7 +720,7 @@ function cardEl(o,cp,cv){
   const s=o.s,a=o.a;const hasDupe=a.people.some(id=>cp[id]>1)||a.vehicles.some(id=>cv[id]>1);
   const vehV=a.vehicles.filter(id=>(vById[id]||{}).kind!=='重機');
   const vehH=a.vehicles.filter(id=>(vById[id]||{}).kind==='重機');
-  const el=document.createElement('div');el.className='card'+(hasDupe?' conflict':'');el.dataset.sid=s.id;
+  const el=document.createElement('div');el.className='card'+(hasDupe?' conflict':'')+(s.status==='完了'?' done':'');el.dataset.sid=s.id;
   el.innerHTML=`
     <div class="card-head"><span class="co-dot ${s.co}"></span><span class="site-name">${esc(s.name)}</span><span class="co-tag">${esc(coNames(s))}</span><button class="del-site" data-del="${s.id}" title="この日からこの現場を外す">×</button></div>
     ${siteMetaHtml(s)}
@@ -759,10 +788,10 @@ function renderGrid(){
     body+=`<tr><td class="divlab" colspan="${n+1}">車両</td></tr>`;
     body+=resourceRows(VEHICLES,'vehicle',dates);
   }else{
-    const sites=SITES.filter(s=>siteInCo(s,st.co));
+    const sites=sortSites(SITES.filter(s=>siteInCo(s,st.co)&&visibleSite(s,dates)));
     if(!sites.length)body=`<tr><td class="rowlab">—</td><td colspan="${n}" class="empty">現場なし</td></tr>`;
     sites.forEach(s=>{
-      body+=`<tr><td class="rowlab"${canManage()?` draggable="true" data-rsite="${s.id}"`:''}>${canManage()?'<span class="drag-h" title="ドラッグで並び替え">⠿</span>':''}<div class="rl-name">${esc(s.name)}</div><div class="rl-sub">${coNames(s)} ・ 担当 ${s.tantou.map(id=>(pById[id]||{name:id}).name).join('、')||'—'}</div>${siteMetaInline(s)?`<div class="rl-sub2">${siteMetaInline(s)}</div>`:''}</td>`;
+      body+=`<tr${s.status==='完了'?' class="done"':''}><td class="rowlab"${canManage()?` draggable="true" data-rsite="${s.id}"`:''}>${canManage()?'<span class="drag-h" title="ドラッグで並び替え">⠿</span>':''}<div class="rl-name">${esc(s.name)}</div><div class="rl-sub">${coNames(s)} ・ 担当 ${s.tantou.map(id=>(pById[id]||{name:id}).name).join('、')||'—'}</div>${siteMetaInline(s)?`<div class="rl-sub2">${siteMetaInline(s)}</div>`:''}</td>`;
       dates.forEach(d=>{const ds=ymd(d);const a=dayAssign(ds)[s.id];const wd=d.getDay();const wknd=(wd===0||wd===6)?' wknd':'';
         if(!a){body+=detail==='bar'?`<td class="gcell qadd${wknd}" data-qadd="${s.id}|${ds}" title="クリックで作業内容を入力"></td>`:`<td class="${wknd}"></td>`;return;}
         if(detail==='bar'){const full=(a.content||'').trim();const first=full.split('\n')[0].trim();const multi=full.indexOf('\n')>=0;body+=`<td class="gcell active${wknd}" data-drill="${ds}" title="${esc(full)}"><div class="gbar ${s.co}">${esc(first?trunc(first,8)+(multi?' …':''):'—')}</div></td>`;return;}
@@ -795,6 +824,13 @@ function resourceRows(master,kind,dates){
   }).join('');
 }
 
+// ツールバー
+(()=>{const q=document.getElementById('siteQ'),qc=document.getElementById('siteQClear'),wrap=q.parentElement;
+  let t=null;q.addEventListener('input',()=>{clearTimeout(t);t=setTimeout(()=>{st.q=q.value.trim();wrap.classList.toggle('has',!!st.q);render();},200);});
+  qc.onclick=()=>{q.value='';st.q='';wrap.classList.remove('has');render();};
+  const ss=document.getElementById('sortSel');ss.value=st.sort;ss.onchange=()=>{st.sort=ss.value;localStorage.setItem('haisha_sort',st.sort);render();};
+  const sd=document.getElementById('showDone');sd.checked=st.showDone;sd.onchange=()=>{st.showDone=sd.checked;localStorage.setItem('haisha_showdone',st.showDone?'1':'0');render();};
+})();
 // drill
 document.getElementById('content').addEventListener('click',e=>{const d=e.target.closest('[data-drill]');
   if(d&&st.view!=='day'){st.ret=st.view;st.curDate=d.dataset.drill;st.view='day';
@@ -989,7 +1025,7 @@ function renderAdmin(){
       <select id="adUnit" class="tin" style="max-width:90px">${UNITS.map(u=>`<option value="${u}"${ed&&ed.unit===u?' selected':''}>${u||'単位'}</option>`).join('')}</select>
       <input id="adNote" class="tin" placeholder="備考（任意）" value="${ed?esc(ed.note||''):''}">
       <button class="cp-go" id="adSiteGo">${ed?'更新':'＋ 現場を登録'}</button>${ed?'<button class="adm-cancel" id="adCancel">取消</button>':''}</div>
-      <div class="adm-list">${SITES.map(s=>`<div class="adm-row"><span class="nm">${esc(s.name)}</span><span class="adm-sub">${esc(coNames(s))}${s.tantou&&s.tantou.length?' ・ 担当 '+esc((pById[s.tantou[0]]||{name:s.tantou[0]}).name):''}${s.client?' ・ '+esc(s.client):''}${s.qty!==''&&s.qty!=null?' ・ '+esc(s.qty)+esc(s.unit||''):''}${s.status==='完了'?' ・ 完了':''}</span><button class="adm-mini" data-edsite="${s.id}">編集</button><button class="adm-mini" data-offsite="${s.id}">無効化</button></div>`).join('')||'<div class="empty">現場なし</div>'}</div>`;
+      <div class="adm-list">${SITES.map(s=>`<div class="adm-row"><span class="nm">${esc(s.name)}</span><span class="adm-sub">${esc(coNames(s))}${s.tantou&&s.tantou.length?' ・ 担当 '+esc((pById[s.tantou[0]]||{name:s.tantou[0]}).name):''}${s.client?' ・ '+esc(s.client):''}${s.qty!==''&&s.qty!=null?' ・ '+esc(s.qty)+esc(s.unit||''):''}${s.status==='完了'?' ・ 完了':''}</span><button class="adm-mini" data-edsite="${s.id}">編集</button><button class="adm-mini" data-donesite="${s.id}">${s.status==='完了'?'進行中に戻す':'完了'}</button><button class="adm-mini" data-offsite="${s.id}">非表示</button></div>`).join('')||'<div class="empty">現場なし</div>'}</div>`;
   }else if(adminTab==='staff'){
     b.innerHTML=`<div class="adm-form"><input id="adName" class="tin" placeholder="氏名"><select id="adCo" class="tin">${coOpts(defCo)}</select><button class="cp-go" id="adStaffGo">＋ 社員を登録</button></div>
       <div class="adm-list">${PEOPLE.map(p=>{const raw=SB_STAFF_ALL.find(x=>x.code===p.id)||{};const role=(String(raw.role||'').trim()||'閲覧');const sc=String(raw.scope||'').trim()||'自社';
@@ -1054,7 +1090,8 @@ document.getElementById('adminBody').addEventListener('click',async e=>{
   if(id==='adKizaiGo'){const name=val('adName');if(!name)return alert('表示名を入力してください');flash('保存中…');await apiPost({action:'addKizai',name,kubun:val('adKubun'),company:val('adCo')});await reloadMastersAndAdmin();return;}
   if(id==='adGaichuGo'){const name=val('adName');if(!name)return alert('会社名を入力してください');flash('保存中…');await apiPost({action:'addGaichu',name});await reloadMastersAndAdmin();return;}
   const eds=e.target.closest('[data-edsite]');if(eds){editSiteCode=eds.dataset.edsite;renderAdmin();return;}
-  const offs=e.target.closest('[data-offsite]');if(offs){if(confirm('この現場を無効化（完了）にしますか？')){flash('保存中…');await apiPost({action:'setActive',type:'site',code:offs.dataset.offsite,active:false});await reloadMastersAndAdmin();}return;}
+  const dn=e.target.closest('[data-donesite]');if(dn){const code=dn.dataset.donesite;const cur=(SITES.find(x=>x.id===code)||{}).status;flash('保存中…');await apiPost({action:'setSiteStatus',code,status:cur==='完了'?'':'完了'});await reloadMastersAndAdmin();return;}
+  const offs=e.target.closest('[data-offsite]');if(offs){if(confirm('この現場を非表示にしますか？（ボードから消えます。過去の記録は残ります）')){flash('保存中…');await apiPost({action:'setActive',type:'site',code:offs.dataset.offsite,active:false});await reloadMastersAndAdmin();}return;}
   const offst=e.target.closest('[data-offstaff]');if(offst){if(confirm('この社員を無効化しますか？')){flash('保存中…');await apiPost({action:'setActive',type:'staff',code:offst.dataset.offstaff,active:false});await reloadMastersAndAdmin();}return;}
   const offk=e.target.closest('[data-offkizai]');if(offk){if(confirm('この機材を無効化しますか？')){flash('保存中…');await apiPost({action:'setActive',type:'kizai',code:offk.dataset.offkizai,active:false});await reloadMastersAndAdmin();}return;}
   const offg=e.target.closest('[data-offgaichu]');if(offg){if(confirm('この外注会社を無効化しますか？')){flash('保存中…');await apiPost({action:'setActive',type:'gaichu',code:offg.dataset.offgaichu,active:false});await reloadMastersAndAdmin();}return;}
