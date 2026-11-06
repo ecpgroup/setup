@@ -203,6 +203,9 @@
   .co-chk{display:inline-flex;align-items:center;gap:5px;background:var(--surface2);border:1px solid var(--line);border-radius:8px;padding:6px 10px;font-size:13px;cursor:pointer;}
   .co-chk input{accent-color:var(--accent);}
   .adm-group:first-child{margin-top:0;}
+  .adm-row[draggable]{cursor:grab;}
+  .adm-row.rl-dragging{opacity:.45;}
+  .adm-row.rl-over{box-shadow:inset 0 2px 0 var(--accent);}
   .adm-row{display:flex;align-items:center;gap:10px;padding:9px 8px;border-bottom:1px solid var(--line);font-size:13.5px;}
   .adm-row .nm{font-weight:600;}
   .adm-row .adm-sub{flex:1;color:var(--muted);font-size:12px;}
@@ -392,6 +395,8 @@ async function sbApi(p){
       case 'addSite': return await sbAddSite(p);
       case 'updateSite': return await sbUpdateSite(p);
       case 'reorderSites': {const {error}=await sb.from('sites').upsert(p.codes.map((c,i)=>({code:c,ord:i+1})));return error?sbFail(error):{ok:true};}
+      case 'reorderKizai': {const {error}=await sb.from('kizai').upsert(p.codes.map((c,i)=>({code:c,ord:i+1})));return error?sbFail(error):{ok:true};}
+      case 'setPerm': {const {error}=await sb.from('staff').update({role:p.role||'',scope:p.scope||''}).eq('code',p.code);return error?sbFail(error):{ok:true};}
       case 'addStaff': return await sbAddStaff(p);
       case 'addKizai': return await sbAddKizai(p);
       case 'addGaichu': {const {error}=await sb.from('gaichu').upsert({name:p.name,active:true});return error?sbFail(error):{ok:true};}
@@ -405,7 +410,7 @@ async function sbMasters(){
   const [s1,s2,s3,s4]=await Promise.all([
     sb.from('sites').select('*').eq('active',true).order('ord').order('code').range(0,9999),
     sb.from('staff').select('*').eq('active',true).order('ord').order('code').range(0,9999),
-    sb.from('kizai').select('*').eq('active',true).order('code').range(0,9999),
+    sb.from('kizai').select('*').eq('active',true).order('ord').order('code').range(0,9999),
     sb.from('gaichu').select('name').eq('active',true).order('name').range(0,9999)
   ]);
   for(const r of [s1,s2,s3,s4])if(r.error)return sbFail(r.error);
@@ -473,7 +478,7 @@ async function sbAddKizai(p){
   if(e1)return sbFail(e1);
   let max=0;(ex||[]).forEach(r=>{const m=String(r.code).match(/K(\d+)/);if(m)max=Math.max(max,Number(m[1]));});
   const code='K'+String(max+1).padStart(3,'0');
-  const {error}=await sb.from('kizai').insert({code:code,name:p.name||'',kind:(p.kubun==='重機'?'重機':'車両'),company:normCo(p.company||'nexus'),active:true});
+  const {error}=await sb.from('kizai').insert({code:code,name:p.name||'',kind:(p.kubun==='重機'?'重機':'車両'),company:normCo(p.company||'nexus'),active:true,ord:9999});
   return error?sbFail(error):{ok:true,code:code};
 }
 async function sbSetActive(p){
@@ -987,9 +992,10 @@ function renderAdmin(){
       <div class="adm-list">${SITES.map(s=>`<div class="adm-row"><span class="nm">${esc(s.name)}</span><span class="adm-sub">${esc(coNames(s))}${s.tantou&&s.tantou.length?' ・ 担当 '+esc((pById[s.tantou[0]]||{name:s.tantou[0]}).name):''}${s.client?' ・ '+esc(s.client):''}${s.qty!==''&&s.qty!=null?' ・ '+esc(s.qty)+esc(s.unit||''):''}${s.status==='完了'?' ・ 完了':''}</span><button class="adm-mini" data-edsite="${s.id}">編集</button><button class="adm-mini" data-offsite="${s.id}">無効化</button></div>`).join('')||'<div class="empty">現場なし</div>'}</div>`;
   }else if(adminTab==='staff'){
     b.innerHTML=`<div class="adm-form"><input id="adName" class="tin" placeholder="氏名"><select id="adCo" class="tin">${coOpts(defCo)}</select><button class="cp-go" id="adStaffGo">＋ 社員を登録</button></div>
-      <div class="adm-list">${PEOPLE.map(p=>`<div class="adm-row"><span class="nm">${esc(p.name)}</span><span class="adm-sub">${COMPANIES[p.co]?COMPANIES[p.co].name:p.co}</span><button class="adm-mini" data-offstaff="${p.id}">無効化</button></div>`).join('')||'<div class="empty">社員なし</div>'}</div>`;
+      <div class="adm-list">${PEOPLE.map(p=>{const raw=SB_STAFF_ALL.find(x=>x.code===p.id)||{};const role=(String(raw.role||'').trim()||'閲覧');const sc=String(raw.scope||'').trim()||'自社';
+        return `<div class="adm-row" data-permrow="${p.id}"><span class="nm">${esc(p.name)}</span><span class="adm-sub">${COMPANIES[p.co]?COMPANIES[p.co].name:p.co} ・ ${esc(role)}／${esc(sc)}</span>${canManage()?`<button class="adm-mini" data-perm="${p.id}">権限</button>`:''}<button class="adm-mini" data-offstaff="${p.id}">無効化</button></div>`;}).join('')||'<div class="empty">社員なし</div>'}</div>`;
   }else if(adminTab==='kizai'){
-    const admVeh=(list)=>list.map(v=>`<div class="adm-row"><span class="nm">${esc(v.name)}</span><span class="adm-sub">${COMPANIES[v.co]?COMPANIES[v.co].name:v.co}</span><button class="adm-mini" data-offkizai="${v.id}">無効化</button></div>`).join('');
+    const admVeh=(list)=>list.map(v=>`<div class="adm-row"${canManage()?` draggable="true" data-rkz="${v.id}"`:''}>${canManage()?'<span class="drag-h" title="ドラッグで並び替え">⠿</span>':''}<span class="nm">${esc(v.name)}</span><span class="adm-sub">${COMPANIES[v.co]?COMPANIES[v.co].name:v.co}</span><button class="adm-mini" data-offkizai="${v.id}">無効化</button></div>`).join('');
     const vV=VEHICLES.filter(v=>v.kind!=='重機'), vH=VEHICLES.filter(v=>v.kind==='重機');
     b.innerHTML=`<div class="adm-form"><input id="adName" class="tin" placeholder="表示名（例：4tダンプ）"><select id="adKubun" class="tin"><option value="車両">車両</option><option value="重機">重機</option></select><select id="adCo" class="tin">${coOpts(defCo)}</select><button class="cp-go" id="adKizaiGo">＋ 機材を登録</button></div>
       <div class="adm-list"><div class="adm-group">車両</div>${admVeh(vV)||'<div class="empty">車両なし</div>'}<div class="adm-group">重機</div>${admVeh(vH)||'<div class="empty">重機なし</div>'}</div>`;
@@ -999,7 +1005,42 @@ function renderAdmin(){
   }
 }
 async function reloadMastersAndAdmin(){await loadMasters();renderAdmin();render();flash('保存しました');}
+function openPermEditor(code){
+  const row=document.querySelector(`[data-permrow="${code}"]`);if(!row)return;
+  const raw=SB_STAFF_ALL.find(x=>x.code===code)||{};
+  const role=String(raw.role||'').trim();
+  const sc=String(raw.scope||'').trim();
+  const mode= sc==='全社'?'全社':((sc===''||sc==='自社')?'自社':'custom');
+  const checked=mode==='custom'?parseCosJS(sc):[];
+  row.innerHTML=`<span class="nm">${esc(raw.name||code)}</span>
+    <select id="pmRole" class="tin" style="max-width:88px"><option value=""${role===''?' selected':''}>閲覧</option><option value="編集"${role==='編集'?' selected':''}>編集</option><option value="管理"${role==='管理'?' selected':''}>管理</option></select>
+    <select id="pmScope" class="tin" style="max-width:110px"><option value="自社"${mode==='自社'?' selected':''}>自社</option><option value="全社"${mode==='全社'?' selected':''}>全社</option><option value="custom"${mode==='custom'?' selected':''}>会社を指定</option></select>
+    <span id="pmCos" class="co-multi" style="display:${mode==='custom'?'flex':'none'}">${CO_ORDER.map(c=>`<label class="co-chk"><input type="checkbox" value="${c}"${checked.includes(c)?' checked':''}>${COMPANIES[c].name}</label>`).join('')}</span>
+    <button class="adm-mini" data-permsave="${code}">保存</button><button class="adm-mini" data-permcancel="1">取消</button>`;
+  document.getElementById('pmScope').onchange=ev=>{document.getElementById('pmCos').style.display=ev.target.value==='custom'?'flex':'none';};
+}
+let dragKz=null;
+const ab=document.getElementById('adminBody');
+ab.addEventListener('dragstart',e=>{const c=e.target.closest('[data-rkz]');if(!c)return;dragKz=c.dataset.rkz;e.dataTransfer.effectAllowed='move';c.classList.add('rl-dragging');});
+ab.addEventListener('dragend',()=>{dragKz=null;ab.querySelectorAll('.rl-dragging,.rl-over').forEach(x=>x.classList.remove('rl-dragging','rl-over'));});
+ab.addEventListener('dragover',e=>{const c=e.target.closest('[data-rkz]');if(!c||!dragKz)return;e.preventDefault();ab.querySelectorAll('.rl-over').forEach(x=>x.classList.remove('rl-over'));if(c.dataset.rkz!==dragKz)c.classList.add('rl-over');});
+ab.addEventListener('drop',async e=>{const c=e.target.closest('[data-rkz]');if(!c||!dragKz)return;e.preventDefault();const tgt=c.dataset.rkz,src=dragKz;dragKz=null;c.classList.remove('rl-over');if(tgt===src)return;
+  const codes=VEHICLES.map(v=>v.id);const si=codes.indexOf(src);if(si<0)return;codes.splice(si,1);const ni=codes.indexOf(tgt);if(ni<0)return;codes.splice(ni,0,src);
+  flash('並び替え中…');const r=await apiPost({action:'reorderKizai',codes});
+  if(!(r&&r.ok)){flash('並び替え失敗：'+((r&&r.error)||''));return;}
+  await loadMasters();renderAdmin();render();flash('並び替えました');});
 document.getElementById('adminBody').addEventListener('click',async e=>{
+  const pm=e.target.closest('[data-perm]');if(pm){openPermEditor(pm.dataset.perm);return;}
+  const psv=e.target.closest('[data-permsave]');if(psv){
+    const code=psv.dataset.permsave;
+    const role=document.getElementById('pmRole').value, sm=document.getElementById('pmScope').value;
+    let scope=sm;
+    if(sm==='custom'){const cs=[...document.querySelectorAll('#pmCos input:checked')].map(x=>x.value);if(!cs.length)return alert('会社を1つ以上選んでください');scope=cs.join(',');}
+    if(code===SB_ME_CODE&&role!=='管理'&&!confirm('自分の管理権限を外すと、権限編集やマスタ登録ができなくなります。本当に変更しますか？'))return;
+    flash('保存中…');const r=await apiPost({action:'setPerm',code,role,scope});
+    if(!(r&&r.ok)){flash('保存失敗：'+((r&&r.error)||''));return;}
+    await reloadMastersAndAdmin();return;}
+  if(e.target.closest('[data-permcancel]')){renderAdmin();return;}
   const id=e.target.id;
   if(id==='adSiteGo'){const name=val('adName');if(!name)return alert('現場名を入力してください');
     const cos=[...document.querySelectorAll('#adCoBox input:checked')].map(x=>x.value);
